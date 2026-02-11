@@ -1,0 +1,7 @@
+{
+  "name": "RentAI Bangladesh",
+  "description": "An AI-powered rental platform for Bangladesh designed to eliminate broker exploitation and address bachelor discrimination. Features smart matching and verified listings.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
