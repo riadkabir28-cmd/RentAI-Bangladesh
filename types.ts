@@ -23,6 +23,7 @@ export interface Property {
   aiReason?: string;
 }
 
+// Fixed: Added price and other missing fields to the properties joined object to prevent TS errors in Dashboard views
 export interface Application {
   id: string;
   property_id: string;
@@ -34,6 +35,15 @@ export interface Application {
   properties?: {
     title: string;
     area: string;
+    price?: number;
+    images?: string[];
+    bedrooms?: number;
+    bathrooms?: number;
+    type?: string;
+    bachelor_friendly?: boolean;
+    features?: string[];
+    nearby_amenities?: string[];
+    owner_id?: string;
   };
   profiles?: {
     name: string;

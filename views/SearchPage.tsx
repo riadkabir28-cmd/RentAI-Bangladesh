@@ -1,5 +1,5 @@
 
-import { Search, Filter, Sparkles, MapPin, Loader2, Info, Bed, Bath, Tag, X, Plus, ShieldCheck, Train, UserCheck } from 'lucide-react';
+import { Search, Filter, Sparkles, MapPin, Loader2, Info, Bed, Bath, Tag, X, Plus, ShieldCheck, Train, UserCheck, AlertTriangle, Key } from 'lucide-react';
 import { PropertyCard } from '../components/PropertyCard';
 import { AREAS_DHAKA } from '../constants';
 import { Property, User, SearchFilters } from '../types';
@@ -27,6 +27,7 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
   const [isMatching, setIsMatching] = useState(false);
   const [matchingStep, setMatchingStep] = useState('');
   const [showAiIntro, setShowAiIntro] = useState(true);
+  const [keyError, setKeyError] = useState(false);
 
   useEffect(() => {
     setUser(initialUser);
@@ -34,38 +35,17 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
 
   const fetchProperties = async () => {
     setIsLoadingProperties(true);
-    const { data, error } = await supabase
-      .from('properties')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching properties:', error);
-    } else if (data) {
-      const mappedProperties = data.map((p: any) => ({
-        ...p,
-        bachelorFriendly: p.bachelor_friendly,
-        verificationStatus: p.verification_status,
-        ownerId: p.owner_id,
-        nearbyAmenities: p.nearby_amenities || []
-      }));
-      setProperties(mappedProperties);
+    const { data } = await supabase.from('properties').select('*').order('created_at', { ascending: false });
+    if (data) {
+      setProperties(data.map((p: any) => ({
+        ...p, bachelorFriendly: p.bachelor_friendly, verificationStatus: p.verification_status, ownerId: p.owner_id, nearbyAmenities: p.nearby_amenities || []
+      })));
     }
     setIsLoadingProperties(false);
   };
 
   useEffect(() => {
     fetchProperties();
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'properties' }, () => {
-        fetchProperties();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, []);
 
   const filteredProperties = useMemo(() => {
@@ -73,65 +53,46 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
       const matchArea = filters.area ? p.area === filters.area : true;
       const matchPrice = p.price >= filters.minPrice && p.price <= filters.maxPrice;
       const matchBachelor = filters.bachelorOnly ? p.bachelorFriendly : true;
-      const matchType = filters.type ? p.type === filters.type : true;
-      const matchBedrooms = filters.bedrooms !== '' ? p.bedrooms === Number(filters.bedrooms) : true;
-      const matchMetro = filters.nearMetro ? p.features.includes('Near Metro') : true;
-      return matchArea && matchPrice && matchBachelor && matchType && matchBedrooms && matchMetro;
+      const matchMetro = filters.nearMetro ? (p.features || []).includes('Near Metro') : true;
+      return matchArea && matchPrice && matchBachelor && matchMetro;
     });
   }, [properties, filters]);
 
   const handleAiMatch = async () => {
     if (!user || filteredProperties.length === 0) return;
     setIsMatching(true);
+    setKeyError(false);
     
-    const steps = [
-      "Checking Metro connectivity...",
-      "Analyzing Dhaka lifestyle tags...",
-      "Verifying Smart NID owner status...",
-      "Matching budget to area averages...",
-      "Finalizing Dhaka recommendations..."
-    ];
-
+    const steps = ["Checking Metro connectivity...", "Analyzing Dhaka lifestyle tags...", "Finalizing Dhaka recommendations..."];
     let i = 0;
-    const interval = setInterval(() => {
-      setMatchingStep(steps[i % steps.length]);
-      i++;
-    }, 700);
+    const interval = setInterval(() => { setMatchingStep(steps[i % steps.length]); i++; }, 800);
 
     try {
       const matchResults = await getPropertyMatches(user, filteredProperties);
       const updatedProperties = properties.map(p => {
         const result = matchResults.find((r: any) => r.id === p.id);
-        if (result) {
-          return { ...p, aiMatchScore: result.score, aiReason: result.reason };
-        }
+        if (result) return { ...p, aiMatchScore: result.score, aiReason: result.reason };
         return p;
       });
       updatedProperties.sort((a, b) => (b.aiMatchScore || 0) - (a.aiMatchScore || 0));
       setProperties(updatedProperties);
       setShowAiIntro(false);
-    } catch (e) {
+    } catch (e: any) {
+      if (e.message === "API_KEY_REQUIRED") {
+        setKeyError(true);
+      }
       console.error(e);
     } finally {
       clearInterval(interval);
       setIsMatching(false);
-      setMatchingStep('');
     }
   };
 
-  const addPreference = () => {
-    if (newPref.trim() && user) {
-      const updatedUser = { ...user, preferences: [...user.preferences, newPref.trim()] };
-      setUser(updatedUser);
-      setNewPref('');
-      // Optionally update Supabase here, but handled in Dashboard profile usually
-    }
-  };
-
-  const removePreference = (pref: string) => {
-    if (user) {
-      const updatedUser = { ...user, preferences: user.preferences.filter(p => p !== pref) };
-      setUser(updatedUser);
+  const handleReconnectAI = async () => {
+    if (window.aistudio) {
+      await window.aistudio.openSelectKey();
+      setKeyError(false);
+      handleAiMatch();
     }
   };
 
@@ -142,111 +103,60 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
           <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-grow relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input 
-                type="text" 
-                placeholder="Search Dhaka landmarks (e.g. Road 11, NSU, Metro Station)..." 
-                className="w-full pl-12 pr-4 py-4 rounded-3xl border border-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all bg-gray-50/50 font-medium"
-              />
+              <input type="text" placeholder="Search Dhaka landmarks (e.g. Road 11, NSU, Metro Station)..." className="w-full pl-12 pr-4 py-4 rounded-3xl border border-gray-100 focus:ring-2 focus:ring-emerald-500 outline-none transition-all bg-gray-50/50 font-medium" />
             </div>
             <div className="flex gap-2">
-              <select 
-                value={filters.area}
-                onChange={(e) => setFilters({...filters, area: e.target.value})}
-                className="px-6 py-4 rounded-3xl border border-gray-100 focus:ring-2 focus:ring-emerald-500 outline-none bg-white font-bold shadow-sm min-w-[180px]"
-              >
+              <select value={filters.area} onChange={(e) => setFilters({...filters, area: e.target.value})} className="px-6 py-4 rounded-3xl border border-gray-100 focus:ring-2 focus:ring-emerald-500 outline-none bg-white font-bold shadow-sm min-w-[180px]">
                 <option value="">Dhaka (All Areas)</option>
                 {AREAS_DHAKA.map(area => <option key={area} value={area}>{area}</option>)}
               </select>
-              <button 
-                onClick={handleAiMatch}
-                disabled={isMatching || isLoadingProperties || !user}
-                className="dhaka-gradient text-white px-8 py-4 rounded-3xl font-black flex items-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-xl shadow-emerald-600/10 disabled:opacity-50 min-w-[180px] justify-center"
-              >
+              <button onClick={handleAiMatch} disabled={isMatching || isLoadingProperties || !user} className="dhaka-gradient text-white px-8 py-4 rounded-3xl font-black flex items-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-xl disabled:opacity-50 min-w-[180px] justify-center">
                 {isMatching ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
                 {isMatching ? 'Matching...' : 'Smart Match'}
               </button>
             </div>
           </div>
-
           <div className="flex flex-wrap gap-3 items-center">
-            <div className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-2xl">
-              <Filter className="w-4 h-4" />
-              <span className="text-[10px] font-black uppercase tracking-widest">Dhaka Filters</span>
-            </div>
-            <button 
-              onClick={() => setFilters(prev => ({...prev, nearMetro: !prev.nearMetro}))}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl font-bold text-sm transition-all border shadow-sm ${
-                filters.nearMetro ? 'metro-badge border-transparent' : 'bg-white border-gray-100 text-gray-700'
-              }`}
-            >
-              <Train className="w-4 h-4" />
-              Near Metro Rail
-            </button>
-            <button 
-              onClick={() => setFilters(prev => ({...prev, bachelorOnly: !prev.bachelorOnly}))}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl font-bold text-sm transition-all border shadow-sm ${
-                filters.bachelorOnly ? 'bg-amber-100 border-amber-200 text-amber-700' : 'bg-white border-gray-100 text-gray-700'
-              }`}
-            >
-              <UserCheck className="w-4 h-4" />
-              Bachelor Friendly
-            </button>
-            <div className="h-6 w-px bg-gray-200 mx-2"></div>
-            <div className="flex items-center gap-2 border border-gray-100 rounded-2xl px-5 py-2.5 shadow-sm bg-white">
-              <span className="text-xs font-black text-gray-400">RENT:</span>
-              <select 
-                value={filters.maxPrice}
-                onChange={(e) => setFilters({...filters, maxPrice: Number(e.target.value)})}
-                className="text-sm font-bold outline-none bg-transparent text-gray-700"
-              >
-                <option value="200000">Any Budget</option>
-                <option value="15000">Under 15k</option>
-                <option value="30000">Under 30k</option>
-                <option value="60000">Under 60k</option>
-              </select>
-            </div>
+            <button onClick={() => setFilters(prev => ({...prev, nearMetro: !prev.nearMetro}))} className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl font-bold text-sm transition-all border shadow-sm ${filters.nearMetro ? 'metro-badge border-transparent' : 'bg-white border-gray-100 text-gray-700'}`}><Train className="w-4 h-4" /> Near Metro Rail</button>
+            <button onClick={() => setFilters(prev => ({...prev, bachelorOnly: !prev.bachelorOnly}))} className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl font-bold text-sm transition-all border shadow-sm ${filters.bachelorOnly ? 'bg-amber-100 border-amber-200 text-amber-700' : 'bg-white border-gray-100 text-gray-700'}`}><UserCheck className="w-4 h-4" /> Bachelor Friendly</button>
           </div>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-12">
+        {keyError && (
+          <div className="mb-12 p-8 bg-red-50 border border-red-100 rounded-[40px] flex flex-col md:flex-row items-center gap-6 animate-in slide-in-from-top-4">
+             <div className="bg-white p-4 rounded-3xl shadow-sm text-red-600"><AlertTriangle className="w-8 h-8" /></div>
+             <div className="flex-grow text-center md:text-left">
+               <h3 className="text-xl font-black text-red-900 mb-1">Invalid Gemini API Key</h3>
+               <p className="text-sm font-medium text-red-700">Your Google Cloud API key is either missing or invalid. Smart Match requires a valid key from <a href="https://ai.google.dev/gemini-api/docs/billing" className="underline font-bold" target="_blank">a paid billing project</a>.</p>
+             </div>
+             <button onClick={handleReconnectAI} className="bg-red-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-700 transition-all flex items-center gap-2"><Key className="w-4 h-4" /> Re-Connect AI</button>
+          </div>
+        )}
+
         <div className="grid lg:grid-cols-4 gap-12">
           <div className="lg:col-span-1 space-y-8">
-            <div className="bg-white p-8 rounded-[40px] border border-gray-100 shadow-xl shadow-gray-200/50">
-              <h3 className="text-xl font-black mb-6 flex items-center gap-3">
-                <div className="bg-emerald-100 p-2 rounded-xl text-emerald-600">
-                  <Tag className="w-5 h-5" />
-                </div>
-                Dhaka Lifestyle
-              </h3>
-              <p className="text-xs text-gray-500 font-medium mb-6 leading-relaxed">AI analyzes these Dhaka-specific tags to rank your matches.</p>
+            <div className="bg-white p-8 rounded-[40px] border border-gray-100 shadow-xl">
+              <h3 className="text-xl font-black mb-6 flex items-center gap-3"><Tag className="w-5 h-5 text-emerald-600" /> Dhaka Lifestyle</h3>
               <div className="flex flex-wrap gap-2 mb-8">
                 {user?.preferences.map(pref => (
-                  <span key={pref} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 text-xs font-black rounded-2xl border border-emerald-100 group">
+                  <span key={pref} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 text-xs font-black rounded-2xl border border-emerald-100">
                     {pref}
-                    <button onClick={() => removePreference(pref)} className="hover:text-red-500 transition-colors"><X className="w-3 h-3" /></button>
+                    <button onClick={() => setUser(user ? {...user, preferences: user.preferences.filter(p => p !== pref)} : null)}><X className="w-3 h-3" /></button>
                   </span>
                 ))}
               </div>
               <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={newPref}
-                  onChange={(e) => setNewPref(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && addPreference()}
-                  placeholder="e.g. Near Haatirjheel" 
-                  className="flex-grow px-4 py-3 text-sm bg-gray-50 border border-gray-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
-                />
-                <button onClick={addPreference} className="p-3 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200">
-                  <Plus className="w-5 h-5" />
-                </button>
+                <input type="text" value={newPref} onChange={(e) => setNewPref(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (setNewPref(''), user && setUser({...user, preferences: [...user.preferences, newPref]}))} placeholder="Add tag..." className="flex-grow px-4 py-3 text-sm bg-gray-50 border border-gray-100 rounded-2xl outline-none" />
+                <button onClick={() => {setNewPref(''); user && setUser({...user, preferences: [...user.preferences, newPref]}); }} className="p-3 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all shadow-lg"><Plus className="w-5 h-5" /></button>
               </div>
             </div>
           </div>
 
           <div className="lg:col-span-3">
             {isMatching ? (
-              <div className="bg-white rounded-[48px] border border-gray-100 p-24 text-center flex flex-col items-center justify-center shadow-xl shadow-emerald-500/5">
+              <div className="bg-white rounded-[48px] border border-gray-100 p-24 text-center flex flex-col items-center justify-center shadow-xl">
                 <div className="relative mb-10">
                    <div className="w-28 h-28 border-[6px] border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
                    <Sparkles className="absolute inset-0 m-auto w-12 h-12 text-emerald-600 animate-pulse" />
@@ -254,57 +164,22 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
                 <h3 className="text-3xl font-black mb-4">Engaging Dhaka Matching Engine...</h3>
                 <p className="text-emerald-600 font-black text-lg animate-bounce uppercase tracking-widest">{matchingStep}</p>
               </div>
-            ) : isLoadingProperties ? (
-              <div className="flex flex-col items-center justify-center h-96">
-                <Loader2 className="w-12 h-12 animate-spin text-emerald-600 mb-4" />
-                <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Loading Dhaka Homes...</p>
-              </div>
             ) : showAiIntro ? (
               <div className="bg-gray-900 rounded-[56px] p-12 md:p-20 text-white shadow-2xl relative overflow-hidden group">
                 <div className="absolute inset-0 rickshaw-pattern opacity-10"></div>
                 <div className="relative z-10 max-w-2xl">
                   <div className="inline-flex items-center gap-3 bg-emerald-600/30 backdrop-blur-md px-5 py-2.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] mb-10 border border-emerald-500/30">
-                    <Sparkles className="w-4 h-4 text-yellow-400" />
-                    Proprietary Dhaka-Match AI
+                    <Sparkles className="w-4 h-4 text-yellow-400" /> Proprietary Dhaka-Match AI
                   </div>
                   <h2 className="text-5xl md:text-7xl font-black mb-10 leading-[0.95] tracking-tighter">Dhaka's First <br/><span className="text-emerald-500">Broker-Free</span> Search.</h2>
-                  <p className="text-gray-400 mb-12 text-lg md:text-xl leading-relaxed font-medium">
-                    Our AI understands the complexities of Dhaka's traffic, areas, and landlord psychology. We find you a home that fits your life, not just your budget.
-                  </p>
-                  <button 
-                    onClick={handleAiMatch}
-                    disabled={!user}
-                    className="dhaka-gradient text-white px-12 py-6 rounded-[32px] font-black text-xl hover:scale-105 transition-all shadow-3xl shadow-emerald-900/40 disabled:opacity-50"
-                  >
+                  <button onClick={handleAiMatch} disabled={!user} className="dhaka-gradient text-white px-12 py-6 rounded-[32px] font-black text-xl hover:scale-105 transition-all shadow-3xl shadow-emerald-900/40 disabled:opacity-50">
                     {!user ? 'Sign In to Match' : 'Run Smart Match'}
                   </button>
                 </div>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                {filteredProperties.length > 0 ? (
-                  filteredProperties.map(property => (
-                    <PropertyCard key={property.id} property={property} user={user} />
-                  ))
-                ) : (
-                  <div className="col-span-full py-20 text-center">
-                    <div className="bg-white p-20 rounded-[48px] border-2 border-dashed border-gray-100 shadow-sm max-w-lg mx-auto">
-                      <div className="bg-gray-50 w-24 h-24 rounded-[32px] flex items-center justify-center mx-auto mb-8 text-gray-300">
-                        <MapPin className="w-12 h-12" />
-                      </div>
-                      <h3 className="text-3xl font-black text-gray-900 mb-4 tracking-tight">No Basha Found</h3>
-                      <p className="text-gray-500 mb-10 font-medium">Try broadening your search or exploring a different area in Dhaka.</p>
-                      <button 
-                        onClick={() => setFilters({
-                          city: 'Dhaka', area: '', minPrice: 0, maxPrice: 200000, bachelorOnly: false, type: '', bedrooms: '', bathrooms: '', nearMetro: false
-                        })}
-                        className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black text-sm hover:bg-emerald-700 transition-all"
-                      >
-                        Reset Dhaka Filters
-                      </button>
-                    </div>
-                  </div>
-                )}
+                {filteredProperties.length > 0 ? filteredProperties.map(property => <PropertyCard key={property.id} property={property} user={user} />) : <div className="col-span-full py-20 text-center text-gray-400">No properties found matching your Dhaka filters.</div>}
               </div>
             )}
           </div>

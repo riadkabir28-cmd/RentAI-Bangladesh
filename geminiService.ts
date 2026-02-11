@@ -1,51 +1,44 @@
-
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { Property, User } from "./types";
 
-// Removed redundant check for process.env.API_KEY to follow "assume pre-configured" guideline
+/**
+ * Helper to ensure a new instance is created with the current process.env.API_KEY.
+ * Always returns a fresh client to pick up changes from the AI Studio key dialog.
+ */
+const getAiClient = () => {
+  const key = process.env.API_KEY;
+  // Check if key is missing or a placeholder
+  if (!key || key === 'undefined' || key === 'YOUR_API_KEY' || key.length < 5) {
+    throw new Error("API_KEY_REQUIRED");
+  }
+  return new GoogleGenAI({ apiKey: key });
+};
+
+/**
+ * Smart matching for tenants and properties
+ */
 export const getPropertyMatches = async (user: User, properties: Property[]): Promise<any> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-  const prompt = `
-    Act as "RentAI Matcher", a socially-conscious rental expert in Bangladesh.
-    Your goal is to match tenants to properties while specifically overcoming "Bachelor Discrimination" and finding the best lifestyle fit by analyzing property location context.
-
-    Tenant Profile:
-    - Role: ${user.role}
-    - Is Bachelor: ${user.isBachelor ? 'Yes' : 'No'}
-    - Budget: ${user.budget} BDT
-    - Lifestyle Preferences: ${user.preferences.join(', ')}
-
-    Properties to analyze:
-    ${properties.map(p => `
-      - ID: ${p.id}
-        Title: ${p.title}
-        Price: ${p.price}
-        Area: ${p.area}
-        Location Context: ${p.location}
-        Bachelor Friendly: ${p.bachelorFriendly ? 'YES' : 'NO'}
-        Verified: ${p.verified ? 'YES' : 'NO'}
-        Key Features: ${p.features.join(', ')}
-        Nearby Amenities: ${p.nearbyAmenities.join(', ')}
-    `).join('\n')}
-
-    SCORING RULES:
-    1. If user is a Bachelor and property is NOT Bachelor Friendly, the score MUST be below 40.
-    2. If property is Bachelor Friendly and user is a Bachelor, give a significant boost.
-    3. Match budget strictly; +/- 10% is acceptable, but outside that, lower the score.
-    4. Match "Lifestyle Preferences" to "Key Features" AND "Nearby Amenities".
-       - Example: If user prefers "Fast WiFi" and property has it, boost score.
-       - Example: If user prefers "Near University" and property is near a known University (check Nearby Amenities), boost score.
-       - Example: If user prefers "Modern Design" and property is "Renovated", boost score.
-    5. LOCATION CONTEXT: Analyze "Nearby Amenities" to provide a highly localized reason. If it's near a Metro Station, mention the commute advantage. If it's near a Park or Hospital, highlight that based on user preferences.
-
-    RESPONSE FORMAT (JSON Array):
-    - id: string
-    - score: number (0-100)
-    - reason: string (A concise, empathetic sentence explaining the match. Mention specific nearby amenities if they align with the user's lifestyle preferences to show deep contextual understanding of the Dhaka market).
-  `;
-
   try {
+    const ai = getAiClient();
+    const prompt = `
+      Act as "RentAI Matcher", a socially-conscious rental expert in Bangladesh.
+      Analyze these properties for this user based on their profile and lifestyle tags.
+
+      Tenant Profile:
+      - Role: ${user.role}
+      - Is Bachelor: ${user.isBachelor ? 'Yes' : 'No'}
+      - Budget: ${user.budget} BDT
+      - Lifestyle Preferences: ${user.preferences.join(', ')}
+
+      Properties:
+      ${properties.map(p => `- ID: ${p.id}, Title: ${p.title}, Price: ${p.price}, Area: ${p.area}, Bachelor Friendly: ${p.bachelorFriendly}`).join('\n')}
+
+      RESPONSE FORMAT (JSON Array):
+      - id: string
+      - score: number (0-100)
+      - reason: string (brief explanation of why it matches or doesn't)
+    `;
+
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
@@ -65,11 +58,104 @@ export const getPropertyMatches = async (user: User, properties: Property[]): Pr
         }
       }
     });
-
-    // Directly access .text property as per extracting text guidelines
     return JSON.parse(response.text || "[]");
-  } catch (error) {
+  } catch (error: any) {
     console.error("AI Matching Error:", error);
+    // Specifically catch auth-related errors to trigger the key selection UI
+    if (error.message?.includes("API_KEY_REQUIRED") || error.message?.includes("API key") || error.message?.includes("entity was not found") || error.status === 403 || error.status === 401) {
+      throw new Error("API_KEY_REQUIRED");
+    }
     return [];
+  }
+};
+
+/**
+ * FEATURE: Video Understanding
+ * Note: Uses Pro model, requires paid API key via aistudio.openSelectKey()
+ */
+export const analyzePropertyVideo = async (videoBase64: string, mimeType: string) => {
+  try {
+    const ai = getAiClient();
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: [
+        {
+          inlineData: {
+            data: videoBase64,
+            mimeType: mimeType,
+          },
+        },
+        {
+          text: "Analyze this property walkthrough video. Extract: 1. Bedrooms. 2. Bathrooms. 3. Features. 4. Suggested title. Return as JSON.",
+        }
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            bedrooms: { type: Type.NUMBER },
+            bathrooms: { type: Type.NUMBER },
+            features: { type: Type.ARRAY, items: { type: Type.STRING } },
+            suggestedTitle: { type: Type.STRING }
+          },
+          required: ["bedrooms", "bathrooms", "features", "suggestedTitle"]
+        }
+      }
+    });
+    return JSON.parse(response.text || "{}");
+  } catch (error: any) {
+    console.error("Video Analysis Error:", error);
+    if (error.message?.includes("API_KEY_REQUIRED") || error.message?.includes("API key") || error.message?.includes("entity was not found")) {
+      throw new Error("API_KEY_REQUIRED");
+    }
+    return null;
+  }
+};
+
+/**
+ * FEATURE: Advanced Chat with different Gemini models
+ */
+export const getAdvancedChatResponse = async (
+  message: string, 
+  mode: 'fast' | 'thinking' | 'search' = 'fast'
+) => {
+  try {
+    const ai = getAiClient();
+    if (mode === 'search') {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: message,
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
+      return {
+        text: response.text,
+        grounding: response.candidates?.[0]?.groundingMetadata?.groundingChunks
+      };
+    } else if (mode === 'thinking') {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-pro-preview',
+        contents: message,
+        config: {
+          thinkingConfig: { thinkingBudget: 32768 }
+        },
+      });
+      return { text: response.text };
+    } else {
+      const response = await ai.models.generateContent({
+        // Updated model name to match guidelines
+        model: 'gemini-flash-lite-latest',
+        contents: message,
+      });
+      return { text: response.text };
+    }
+  } catch (error: any) {
+    console.error("Advanced Chat Error:", error);
+    if (error.message?.includes("API_KEY_REQUIRED") || error.message?.includes("API key") || error.message?.includes("entity was not found")) {
+      return { text: "API_KEY_REQUIRED" };
+    }
+    return { text: "Connection error. Please verify your Gemini API key in the connection settings." };
   }
 };
