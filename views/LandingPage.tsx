@@ -1,9 +1,9 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ShieldCheck, UserCheck, MessageSquare, Zap, Target, Train, MapPin } from 'lucide-react';
+import { Search, ShieldCheck, UserCheck, MessageSquare, Zap, Target, Train, MapPin, Building2, Users } from 'lucide-react';
 
-export default function LandingPage() {
+export default function LandingPage({ onOpenAuth }: { onOpenAuth: () => void }) {
   const navigate = useNavigate();
 
   return (
@@ -34,13 +34,14 @@ export default function LandingPage() {
               onClick={() => navigate('/search')} 
               className="dhaka-gradient text-white px-10 py-5 rounded-[24px] text-xl font-bold hover:scale-105 transition-all flex items-center justify-center gap-3 shadow-2xl shadow-emerald-600/20"
             >
-              <Search className="w-6 h-6" />
+              <Users className="w-6 h-6" />
               Find Dhaka Basha
             </button>
             <button 
-              onClick={() => navigate('/dashboard')}
-              className="bg-white/10 backdrop-blur-md text-white border border-white/20 px-10 py-5 rounded-[24px] text-xl font-bold hover:bg-white/20 transition-all"
+              onClick={onOpenAuth}
+              className="bg-white/10 backdrop-blur-md text-white border border-white/20 px-10 py-5 rounded-[24px] text-xl font-bold hover:bg-white/20 transition-all flex items-center justify-center gap-3"
             >
+              <Building2 className="w-6 h-6" />
               List My Property
             </button>
           </div>

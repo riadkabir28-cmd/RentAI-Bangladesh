@@ -1,10 +1,11 @@
 
 import { Search, Filter, Sparkles, MapPin, Loader2, Info, Bed, Bath, Tag, X, Plus, ShieldCheck, Train, UserCheck } from 'lucide-react';
 import { PropertyCard } from '../components/PropertyCard';
-import { MOCK_PROPERTIES, AREAS_DHAKA } from '../constants';
+import { AREAS_DHAKA } from '../constants';
 import { Property, User, SearchFilters } from '../types';
 import { getPropertyMatches } from '../geminiService';
-import React, { useState, useMemo } from 'react';
+import { supabase } from '../supabase';
+import React, { useState, useMemo, useEffect } from 'react';
 
 export default function SearchPage({ user: initialUser }: { user: User | null }) {
   const [user, setUser] = useState<User | null>(initialUser);
@@ -21,10 +22,51 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
     nearMetro: false
   });
 
-  const [properties, setProperties] = useState<Property[]>(MOCK_PROPERTIES);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [isLoadingProperties, setIsLoadingProperties] = useState(true);
   const [isMatching, setIsMatching] = useState(false);
   const [matchingStep, setMatchingStep] = useState('');
   const [showAiIntro, setShowAiIntro] = useState(true);
+
+  useEffect(() => {
+    setUser(initialUser);
+  }, [initialUser]);
+
+  const fetchProperties = async () => {
+    setIsLoadingProperties(true);
+    const { data, error } = await supabase
+      .from('properties')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching properties:', error);
+    } else if (data) {
+      const mappedProperties = data.map((p: any) => ({
+        ...p,
+        bachelorFriendly: p.bachelor_friendly,
+        verificationStatus: p.verification_status,
+        ownerId: p.owner_id,
+        nearbyAmenities: p.nearby_amenities || []
+      }));
+      setProperties(mappedProperties);
+    }
+    setIsLoadingProperties(false);
+  };
+
+  useEffect(() => {
+    fetchProperties();
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'properties' }, () => {
+        fetchProperties();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const filteredProperties = useMemo(() => {
     return properties.filter(p => {
@@ -39,7 +81,7 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
   }, [properties, filters]);
 
   const handleAiMatch = async () => {
-    if (!user) return;
+    if (!user || filteredProperties.length === 0) return;
     setIsMatching(true);
     
     const steps = [
@@ -79,14 +121,17 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
 
   const addPreference = () => {
     if (newPref.trim() && user) {
-      setUser({ ...user, preferences: [...user.preferences, newPref.trim()] });
+      const updatedUser = { ...user, preferences: [...user.preferences, newPref.trim()] };
+      setUser(updatedUser);
       setNewPref('');
+      // Optionally update Supabase here, but handled in Dashboard profile usually
     }
   };
 
   const removePreference = (pref: string) => {
     if (user) {
-      setUser({ ...user, preferences: user.preferences.filter(p => p !== pref) });
+      const updatedUser = { ...user, preferences: user.preferences.filter(p => p !== pref) };
+      setUser(updatedUser);
     }
   };
 
@@ -114,7 +159,7 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
               </select>
               <button 
                 onClick={handleAiMatch}
-                disabled={isMatching}
+                disabled={isMatching || isLoadingProperties || !user}
                 className="dhaka-gradient text-white px-8 py-4 rounded-3xl font-black flex items-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-xl shadow-emerald-600/10 disabled:opacity-50 min-w-[180px] justify-center"
               >
                 {isMatching ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
@@ -128,7 +173,6 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
               <Filter className="w-4 h-4" />
               <span className="text-[10px] font-black uppercase tracking-widest">Dhaka Filters</span>
             </div>
-            
             <button 
               onClick={() => setFilters(prev => ({...prev, nearMetro: !prev.nearMetro}))}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl font-bold text-sm transition-all border shadow-sm ${
@@ -138,20 +182,16 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
               <Train className="w-4 h-4" />
               Near Metro Rail
             </button>
-
             <button 
               onClick={() => setFilters(prev => ({...prev, bachelorOnly: !prev.bachelorOnly}))}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl font-bold text-sm transition-all border shadow-sm ${
                 filters.bachelorOnly ? 'bg-amber-100 border-amber-200 text-amber-700' : 'bg-white border-gray-100 text-gray-700'
               }`}
             >
-              {/* Added UserCheck to the imports above to fix the error on this line */}
               <UserCheck className="w-4 h-4" />
               Bachelor Friendly
             </button>
-
             <div className="h-6 w-px bg-gray-200 mx-2"></div>
-
             <div className="flex items-center gap-2 border border-gray-100 rounded-2xl px-5 py-2.5 shadow-sm bg-white">
               <span className="text-xs font-black text-gray-400">RENT:</span>
               <select 
@@ -171,7 +211,6 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
 
       <div className="max-w-7xl mx-auto px-4 py-12">
         <div className="grid lg:grid-cols-4 gap-12">
-          {/* Lifestyle Panel */}
           <div className="lg:col-span-1 space-y-8">
             <div className="bg-white p-8 rounded-[40px] border border-gray-100 shadow-xl shadow-gray-200/50">
               <h3 className="text-xl font-black mb-6 flex items-center gap-3">
@@ -181,7 +220,6 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
                 Dhaka Lifestyle
               </h3>
               <p className="text-xs text-gray-500 font-medium mb-6 leading-relaxed">AI analyzes these Dhaka-specific tags to rank your matches.</p>
-              
               <div className="flex flex-wrap gap-2 mb-8">
                 {user?.preferences.map(pref => (
                   <span key={pref} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 text-xs font-black rounded-2xl border border-emerald-100 group">
@@ -190,7 +228,6 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
                   </span>
                 ))}
               </div>
-
               <div className="flex gap-2">
                 <input 
                   type="text" 
@@ -200,25 +237,10 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
                   placeholder="e.g. Near Haatirjheel" 
                   className="flex-grow px-4 py-3 text-sm bg-gray-50 border border-gray-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
                 />
-                <button 
-                  onClick={addPreference}
-                  className="p-3 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200"
-                >
+                <button onClick={addPreference} className="p-3 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200">
                   <Plus className="w-5 h-5" />
                 </button>
               </div>
-            </div>
-
-            <div className="bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:rotate-12 transition-transform">
-                <ShieldCheck className="w-16 h-16 text-emerald-600" />
-              </div>
-              <h4 className="font-black text-emerald-900 text-sm mb-4 flex items-center gap-2">
-                Bhalomanush Protocol
-              </h4>
-              <p className="text-[11px] text-gray-500 leading-relaxed font-medium">
-                Our verification system prioritizes "Bhalomanush" (trusted) owners who have clear rental histories and Smart NID verification in the Dhaka metropolitan area.
-              </p>
             </div>
           </div>
 
@@ -231,6 +253,11 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
                 </div>
                 <h3 className="text-3xl font-black mb-4">Engaging Dhaka Matching Engine...</h3>
                 <p className="text-emerald-600 font-black text-lg animate-bounce uppercase tracking-widest">{matchingStep}</p>
+              </div>
+            ) : isLoadingProperties ? (
+              <div className="flex flex-col items-center justify-center h-96">
+                <Loader2 className="w-12 h-12 animate-spin text-emerald-600 mb-4" />
+                <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Loading Dhaka Homes...</p>
               </div>
             ) : showAiIntro ? (
               <div className="bg-gray-900 rounded-[56px] p-12 md:p-20 text-white shadow-2xl relative overflow-hidden group">
@@ -246,9 +273,10 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
                   </p>
                   <button 
                     onClick={handleAiMatch}
-                    className="dhaka-gradient text-white px-12 py-6 rounded-[32px] font-black text-xl hover:scale-105 transition-all shadow-3xl shadow-emerald-900/40"
+                    disabled={!user}
+                    className="dhaka-gradient text-white px-12 py-6 rounded-[32px] font-black text-xl hover:scale-105 transition-all shadow-3xl shadow-emerald-900/40 disabled:opacity-50"
                   >
-                    Run Smart Match
+                    {!user ? 'Sign In to Match' : 'Run Smart Match'}
                   </button>
                 </div>
               </div>
@@ -256,7 +284,7 @@ export default function SearchPage({ user: initialUser }: { user: User | null })
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                 {filteredProperties.length > 0 ? (
                   filteredProperties.map(property => (
-                    <PropertyCard key={property.id} property={property} />
+                    <PropertyCard key={property.id} property={property} user={user} />
                   ))
                 ) : (
                   <div className="col-span-full py-20 text-center">

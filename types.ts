@@ -25,29 +25,36 @@ export interface Property {
 
 export interface Application {
   id: string;
-  propertyId: string;
-  tenantId: string;
-  tenantName: string;
+  property_id: string;
+  tenant_id: string;
   status: 'Pending' | 'Approved' | 'Rejected';
-  date: string;
+  created_at: string;
   message?: string;
+  // Join data
+  properties?: {
+    title: string;
+    area: string;
+  };
+  profiles?: {
+    name: string;
+  };
 }
 
 export interface Message {
   id: string;
-  senderId: string;
+  sender_id: string;
   text: string;
-  timestamp: string;
+  created_at: string;
 }
 
 export interface Conversation {
   id: string;
-  participantId: string;
+  tenant_id: string;
+  owner_id: string;
+  property_id: string;
+  // UI helper fields
   participantName: string;
   participantRole: 'Tenant' | 'Owner';
-  lastMessage: string;
-  lastTimestamp: string;
-  messages: Message[];
   propertyTitle?: string;
 }
 
