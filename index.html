@@ -6,13 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RentAI Bangladesh | Dhaka's Most Trusted Rental Platform</title>
     
-    <!-- Global shims to prevent library crashes -->
+    <!-- Robust environment shims for Gemini SDK -->
     <script>
-      window.process = { 
-        env: { NODE_ENV: 'production', API_KEY: undefined },
-        nextTick: (cb) => setTimeout(cb, 0),
-        browser: true
+      window.process = window.process || { env: {} };
+      window.process.env = { 
+        ...window.process.env, 
+        NODE_ENV: 'production', 
+        API_KEY: undefined 
       };
+      window.process.nextTick = (cb) => setTimeout(cb, 0);
       window.global = window;
     </script>
 
@@ -20,55 +22,95 @@
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
     
     <style>
-      body { font-family: 'Inter', sans-serif; background-color: #fcfcf9; }
+      body { font-family: 'Inter', sans-serif; background-color: #fcfcf9; margin: 0; }
       h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; }
-      .glass { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); }
       .dhaka-gradient { background: linear-gradient(135deg, #059669 0%, #10b981 50%, #fbbf24 100%); }
+      
+      #boot-loader {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #fcfcf9;
+        z-index: 9999;
+        transition: opacity 0.5s ease-out;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 
+    <!-- Import Map for shared React instance -->
     <script type="importmap">
-    {
-      "imports": {
-        "react": "https://esm.sh/react@19.0.0",
-        "react/": "https://esm.sh/react@19.0.0/",
-        "react-dom": "https://esm.sh/react-dom@19.0.0",
-        "react-dom/": "https://esm.sh/react-dom@19.0.0/",
-        "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
-        "react-router-dom": "https://esm.sh/react-router-dom@6.22.3?deps=react@19.0.0",
-        "lucide-react": "https://esm.sh/lucide-react@0.460.0?deps=react@19.0.0",
-        "@google/genai": "https://esm.sh/@google/genai@1.40.0",
-        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.45.1"
-      }
-    }
-    </script>
+{
+  "imports": {
+    "react": "https://esm.sh/react@19.0.0",
+    "react-dom": "https://esm.sh/react-dom@19.0.0",
+    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+    "react-router-dom": "https://esm.sh/react-router-dom@6.22.3?deps=react@19.0.0",
+    "lucide-react": "https://esm.sh/lucide-react@0.460.0?deps=react@19.0.0",
+    "@google/genai": "https://esm.sh/@google/genai@1.40.0",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.45.1",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/"
+  }
+}
+</script>
+
+    <!-- Babel Standalone processes JSX/TSX in the browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   </head>
   <body>
+    <div id="boot-loader">
+      <div style="width: 40px; height: 40px; border: 3px solid #10b981; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+      <p style="margin-top: 20px; font-weight: 800; color: #10b981; font-family: 'Space Grotesk', sans-serif; letter-spacing: 0.1em; text-transform: uppercase; font-size: 10px;">Booting RentAI Dhaka...</p>
+    </div>
+
     <div id="root"></div>
     
-    <!-- Load the local index.tsx through the esm.sh/run transpiler with a local reference -->
-    <script type="module" src="https://esm.sh/run/index.tsx"></script>
+    <!-- Entry script processed by Babel -->
+    <script type="text/babel" data-type="module" data-presets="typescript,react">
+      import React from 'react';
+      import ReactDOM from 'react-dom/client';
+      import App from './App.tsx';
+
+      const rootElement = document.getElementById('root');
+      if (rootElement) {
+        try {
+          const root = ReactDOM.createRoot(rootElement);
+          root.render(<App />);
+          
+          // Smoothly remove loader after app mounts
+          setTimeout(() => {
+            const loader = document.getElementById('boot-loader');
+            if (loader) {
+              loader.style.opacity = '0';
+              setTimeout(() => loader.remove(), 500);
+            }
+          }, 800);
+        } catch (err) {
+          console.error("Mounting Error:", err);
+          document.getElementById('boot-loader').innerHTML = `<p style="color:red">Mounting Error: ${err.message}</p>`;
+        }
+      }
+    </script>
 
     <script>
-      // Global error listener to help debug production boot failures
+      // Global error management to catch and display syntax or module errors
       window.addEventListener('error', function(event) {
-        console.error('RentAI Boot Error:', event.error || event.message);
         const root = document.getElementById('root');
-        // If the app hasn't loaded after 2 seconds, show a troubleshooting guide
-        setTimeout(() => {
-          if (root && !root.hasChildNodes()) {
-            root.innerHTML = `
-              <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; padding: 20px;">
-                <h1 style="color: #10b981; font-family: sans-serif;">RentAI Dhaka</h1>
-                <p style="color: #6b7280; font-size: 14px;">The app is taking longer than expected to start.</p>
-                <div style="margin-top: 20px; font-family: monospace; font-size: 10px; color: #ef4444; background: #fef2f2; padding: 15px; border-radius: 12px; border: 1px solid #fee2e2; max-width: 400px; text-align: left;">
-                  <b>Error Context:</b><br/>
-                  ${event.message || 'Module resolution timeout. This usually indicates a network issue or an invalid ImportMap version mismatch.'}
-                </div>
-                <button onclick="location.reload()" style="margin-top: 24px; padding: 12px 24px; background: #10b981; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; transition: opacity 0.2s;">Retry Application Link</button>
+        if (root && !root.hasChildNodes()) {
+          root.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; padding: 20px; font-family: sans-serif;">
+              <h1 style="color: #10b981; margin-bottom: 10px;">Startup Connection Error</h1>
+              <p style="color: #6b7280; max-width: 450px; line-height: 1.6;">${event.message}</p>
+              <div style="margin-top: 30px; padding: 15px; background: #f3f4f6; border-radius: 12px; font-size: 11px; font-family: monospace; color: #4b5563;">
+                Tip: If you see "Syntax Error", ensure your Vercel project has no custom build settings.
               </div>
-            `;
-          }
-        }, 2000);
+              <button onclick="location.reload()" style="margin-top: 24px; padding: 12px 24px; background: #10b981; color: white; border: none; border-radius: 12px; font-weight: bold; cursor: pointer;">Retry Application</button>
+            </div>
+          `;
+        }
       });
     </script>
   </body>
