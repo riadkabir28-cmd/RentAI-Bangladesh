@@ -418,3 +418,115 @@ const App = () => {
           budget: profile.budget, 
           preferences: profile.preferences || [], 
           isVerified: profile.is_verified 
+        });
+      }
+    } catch (e) {
+      console.error("Profile sync error:", e);
+    }
+  }, []);
+
+  const initAuth = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await syncProfile(session.user);
+      }
+    } catch (e) {
+      console.warn("Supabase check error:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDemoLogin = (role: 'Tenant' | 'Owner') => {
+    setCurrentUser({
+      id: 'demo-user-' + Math.random().toString(36).substr(2, 9),
+      name: 'Demo User',
+      role: role,
+      isBachelor: true,
+      budget: 25000,
+      preferences: ['Near Metro Rail', 'Gulshan', 'Fast WiFi'],
+      isVerified: true
+    });
+    setIsAuthModalOpen(false);
+  };
+
+  const handleGoogleLogin = async (role: 'Tenant' | 'Owner') => {
+    localStorage.setItem('rentai_pending_role', role);
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { 
+        redirectTo: window.location.origin,
+        queryParams: {
+          prompt: 'select_account'
+        }
+      }
+    });
+    if (error) throw error;
+  };
+
+  const handleEmailLogin = async (role: 'Tenant' | 'Owner', email: string) => {
+    localStorage.setItem('rentai_pending_role', role);
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.origin }
+    });
+    if (error) throw error;
+  };
+
+  const handleOnboardingComplete = () => {
+    localStorage.setItem('rentai_onboarding_seen', 'true');
+    setShowOnboarding(false);
+  };
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        await syncProfile(session.user);
+      } else {
+        setCurrentUser(prev => prev?.id.startsWith('demo') ? prev : null);
+      }
+      setLoading(false);
+    });
+
+    initAuth();
+    return () => subscription.unsubscribe();
+  }, [syncProfile]);
+
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-[#fcfcf9]">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+        <p className="font-bold text-emerald-600 uppercase tracking-widest text-[10px]">RentAI Dhaka...</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <MemoryRouter>
+      <div className="min-h-screen flex flex-col">
+        <Navbar user={currentUser} setUser={setCurrentUser} onOpenAuth={() => setIsAuthModalOpen(true)} />
+        <main className="flex-grow">
+          <Routes>
+            <Route path="/" element={<LandingPage onOpenAuth={() => setIsAuthModalOpen(true)} />} />
+            <Route path="/search" element={<SearchPage user={currentUser} />} />
+            <Route path="/dashboard" element={currentUser?.role === 'Owner' ? <OwnerDashboardPage user={currentUser} setUser={setCurrentUser} /> : <DashboardPage user={currentUser} setUser={setCurrentUser} />} />
+          </Routes>
+        </main>
+        
+        {showOnboarding && <OnboardingTour onComplete={handleOnboardingComplete} />}
+        
+        <AuthModal 
+          isOpen={isAuthModalOpen} 
+          onClose={() => setIsAuthModalOpen(false)} 
+          onDemo={handleDemoLogin}
+          onGoogleLogin={handleGoogleLogin}
+          onEmailLogin={handleEmailLogin}
+        />
+        <ChatBot />
+      </div>
+    </MemoryRouter>
+  );
+};
+
+export default App;
