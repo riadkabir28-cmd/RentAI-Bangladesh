@@ -93,7 +93,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, user }) =>
         <img 
           src={property.images[0]} 
           alt={property.title} 
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          className="w-full h-full object-cover opacity-95 group-hover:opacity-100 group-hover:scale-110 transition-all duration-700 ease-out"
         />
         <div className="absolute top-4 left-4 flex flex-col gap-2">
           {property.verified && (

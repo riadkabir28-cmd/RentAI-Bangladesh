@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { Property, User } from "./types";
 
@@ -86,7 +87,7 @@ export const analyzePropertyVideo = async (videoBase64: string, mimeType: string
           },
         },
         {
-          text: "Analyze this property walkthrough video. Extract: 1. Bedrooms. 2. Bathrooms. 3. Features. 4. Suggested title. Return as JSON.",
+          text: "Analyze this property walkthrough video. Extract: 1. Bedrooms. 2. Bathrooms. 3. Features. 4. Suggested title. 5. Nearby amenities visible or implied. Return as JSON.",
         }
       ],
       config: {
@@ -97,9 +98,10 @@ export const analyzePropertyVideo = async (videoBase64: string, mimeType: string
             bedrooms: { type: Type.NUMBER },
             bathrooms: { type: Type.NUMBER },
             features: { type: Type.ARRAY, items: { type: Type.STRING } },
-            suggestedTitle: { type: Type.STRING }
+            suggestedTitle: { type: Type.STRING },
+            nearbyAmenities: { type: Type.ARRAY, items: { type: Type.STRING } }
           },
-          required: ["bedrooms", "bathrooms", "features", "suggestedTitle"]
+          required: ["bedrooms", "bathrooms", "features", "suggestedTitle", "nearbyAmenities"]
         }
       }
     });
