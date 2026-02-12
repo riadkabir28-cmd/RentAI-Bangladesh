@@ -27,6 +27,14 @@
         background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
         color: white;
       }
+
+      @keyframes shimmer {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+      }
+      .animate-shimmer {
+        animation: shimmer 2s infinite;
+      }
     </style>
   <script type="importmap">
 {
@@ -44,5 +52,7 @@
 </head>
   <body class="bg-[#fcfcf9] text-gray-900">
     <div id="root"></div>
+    <!-- Essential entry point for Vercel and production environments -->
+    <script type="module" src="index.tsx"></script>
   </body>
 </html>

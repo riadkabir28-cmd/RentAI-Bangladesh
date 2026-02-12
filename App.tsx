@@ -2,14 +2,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { MemoryRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { Home, Search, LayoutDashboard, UserCircle, Menu, X, ShieldCheck, MapPin, Users, Building2, LogOut, Sparkles, ArrowRight, Mail, Loader2, CheckCircle2, Key, Info, AlertTriangle, FastForward, ExternalLink, Settings, HelpCircle, ArrowLeft, ShieldAlert } from 'lucide-react';
-import LandingPage from './views/LandingPage';
-import SearchPage from './views/SearchPage';
-import DashboardPage from './views/DashboardPage';
-import OwnerDashboardPage from './views/OwnerDashboardPage';
-import { ChatBot } from './components/ChatBot';
-import { OnboardingTour } from './components/OnboardingTour';
-import { User } from './types';
-import { supabase } from './supabase';
+import LandingPage from './views/LandingPage.tsx';
+import SearchPage from './views/SearchPage.tsx';
+import DashboardPage from './views/DashboardPage.tsx';
+import OwnerDashboardPage from './views/OwnerDashboardPage.tsx';
+import { ChatBot } from './components/ChatBot.tsx';
+import { OnboardingTour } from './components/OnboardingTour.tsx';
+import { User } from './types.ts';
+import { supabase } from './supabase.ts';
 
 // Global declaration for AI Studio key management
 declare global {
@@ -52,7 +52,6 @@ const AuthModal = ({ isOpen, onClose, onGoogleLogin, onEmailLogin, onDemo }: {
       await onGoogleLogin(role);
     } catch (err: any) {
       console.error("Google Auth Error:", err);
-      // Detection for "Missing OAuth Secret" (Supabase side)
       if (err.message?.toLowerCase().includes("missing oauth secret") || 
           err.message?.toLowerCase().includes("provider: google") || 
           err.code === "400" || 
@@ -62,7 +61,6 @@ const AuthModal = ({ isOpen, onClose, onGoogleLogin, onEmailLogin, onDemo }: {
           type: 'config'
         });
       } 
-      // Detection for "403 Forbidden" (Google side)
       else if (err.message?.includes("403") || err.status === 403 || err.message?.includes("access_denied")) {
         setError({
           msg: "Google Access Denied (403).",
@@ -107,7 +105,6 @@ const AuthModal = ({ isOpen, onClose, onGoogleLogin, onEmailLogin, onDemo }: {
         </button>
 
         <div className="p-10 text-center relative overflow-y-auto">
-          {/* Progress Indicators */}
           <div className="flex justify-center mb-10 gap-2">
             <div className={`h-1.5 w-12 rounded-full transition-all duration-500 ${step === 'role' ? 'bg-emerald-600 w-16' : 'bg-emerald-100'}`}></div>
             <div className={`h-1.5 w-12 rounded-full transition-all duration-500 ${step === 'auth' ? 'bg-emerald-600 w-16' : 'bg-emerald-100'}`}></div>
@@ -175,7 +172,6 @@ const AuthModal = ({ isOpen, onClose, onGoogleLogin, onEmailLogin, onDemo }: {
                   {loading ? 'Connecting...' : 'Continue with Google'}
                 </button>
 
-                {/* Specific 403 / Access Denied Error UI */}
                 {(error?.type === '403' || showTroubleshooting) && (
                   <div className="bg-red-50 rounded-[32px] p-8 text-left border border-red-100 animate-in shake duration-500 shadow-sm">
                     <div className="flex items-center gap-2 text-red-700 font-black text-[11px] uppercase tracking-widest mb-4">
@@ -209,7 +205,6 @@ const AuthModal = ({ isOpen, onClose, onGoogleLogin, onEmailLogin, onDemo }: {
                   </div>
                 )}
 
-                {/* Missing Secret Error UI */}
                 {error?.type === 'config' && (
                   <div className="bg-amber-50 rounded-[32px] p-8 text-left border border-amber-100 animate-in shake duration-500 shadow-sm">
                     <div className="flex items-center gap-2 text-amber-700 font-black text-[11px] uppercase tracking-widest mb-4">
@@ -412,7 +407,6 @@ const App = () => {
         if (!iErr) profile = inserted;
       }
 
-      // Cleanup pending role once we've established a profile
       localStorage.removeItem('rentai_pending_role');
 
       if (profile) {
@@ -424,116 +418,3 @@ const App = () => {
           budget: profile.budget, 
           preferences: profile.preferences || [], 
           isVerified: profile.is_verified 
-        });
-      }
-    } catch (e) {
-      console.error("Profile sync error:", e);
-    }
-  }, []);
-
-  const initAuth = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        await syncProfile(session.user);
-      }
-    } catch (e) {
-      console.warn("Supabase check error:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDemoLogin = (role: 'Tenant' | 'Owner') => {
-    setCurrentUser({
-      id: 'demo-user-' + Math.random().toString(36).substr(2, 9),
-      name: 'Demo User',
-      role: role,
-      isBachelor: true,
-      budget: 25000,
-      preferences: ['Near Metro Rail', 'Gulshan', 'Fast WiFi'],
-      isVerified: true
-    });
-    setIsAuthModalOpen(false);
-  };
-
-  const handleGoogleLogin = async (role: 'Tenant' | 'Owner') => {
-    localStorage.setItem('rentai_pending_role', role);
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { 
-        redirectTo: window.location.origin,
-        queryParams: {
-          prompt: 'select_account'
-        }
-      }
-    });
-    if (error) throw error;
-  };
-
-  const handleEmailLogin = async (role: 'Tenant' | 'Owner', email: string) => {
-    localStorage.setItem('rentai_pending_role', role);
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin }
-    });
-    if (error) throw error;
-  };
-
-  const handleOnboardingComplete = () => {
-    localStorage.setItem('rentai_onboarding_seen', 'true');
-    setShowOnboarding(false);
-  };
-
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        await syncProfile(session.user);
-      } else {
-        // Only clear if not in demo mode
-        setCurrentUser(prev => prev?.id.startsWith('demo') ? prev : null);
-      }
-      setLoading(false);
-    });
-
-    initAuth();
-    return () => subscription.unsubscribe();
-  }, [syncProfile]);
-
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-[#fcfcf9]">
-      <div className="flex flex-col items-center gap-4">
-        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-        <p className="font-bold text-emerald-600 uppercase tracking-widest text-[10px]">RentAI Dhaka...</p>
-      </div>
-    </div>
-  );
-
-  return (
-    <MemoryRouter>
-      <div className="min-h-screen flex flex-col">
-        <Navbar user={currentUser} setUser={setCurrentUser} onOpenAuth={() => setIsAuthModalOpen(true)} />
-        <main className="flex-grow">
-          <Routes>
-            <Route path="/" element={<LandingPage onOpenAuth={() => setIsAuthModalOpen(true)} />} />
-            <Route path="/search" element={<SearchPage user={currentUser} />} />
-            <Route path="/dashboard" element={currentUser?.role === 'Owner' ? <OwnerDashboardPage user={currentUser} setUser={setCurrentUser} /> : <DashboardPage user={currentUser} setUser={setCurrentUser} />} />
-          </Routes>
-        </main>
-        
-        {showOnboarding && <OnboardingTour onComplete={handleOnboardingComplete} />}
-        
-        <AuthModal 
-          isOpen={isAuthModalOpen} 
-          onClose={() => setIsAuthModalOpen(false)} 
-          onDemo={handleDemoLogin}
-          onGoogleLogin={handleGoogleLogin}
-          onEmailLogin={handleEmailLogin}
-        />
-        <ChatBot />
-      </div>
-    </MemoryRouter>
-  );
-};
-
-export default App;

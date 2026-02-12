@@ -2,17 +2,17 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { User, Property, Application, Conversation, Message } from '../types';
 import { 
-  Plus, MessageCircle, LayoutGrid, TrendingUp, ShieldCheck, FileText, Clock, Home as HomeIcon, X, Building2, UserCircle, Tag, Loader2, Send, Phone, Sparkles, MapPin, CheckCircle2, XCircle, Bed, Activity, Wallet, GanttChart, Video, Trash2, Wand2, ArrowUpDown, Calendar, ChevronDown, Rocket, Brain, Zap, AlertCircle, Info, RefreshCw
+  Plus, MessageCircle, LayoutGrid, TrendingUp, ShieldCheck, FileText, Clock, Home as HomeIcon, X, Building2, UserCircle, Tag, Loader2, Send, Phone, Sparkles, MapPin, CheckCircle2, XCircle, Bed, Activity, Wallet, GanttChart, Video, Trash2, Wand2, ArrowUpDown, Calendar, ChevronDown, Rocket, Brain, Zap, AlertCircle, Info, RefreshCw, CloudUpload, Cpu, Check
 } from 'lucide-react';
 import { supabase } from '../supabase';
 import { analyzePropertyVideo } from '../geminiService';
+
+type ProcessingStage = 'idle' | 'uploading' | 'analyzing' | 'processing' | 'success' | 'error';
 
 export default function OwnerDashboardPage({ user, setUser }: { user: User | null; setUser: (u: User | null) => void }) {
   const [activeTab, setActiveTab] = useState<'analytics' | 'portfolio' | 'applications' | 'messages' | 'settings'>('analytics');
   const [showAddListing, setShowAddListing] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [localProperties, setLocalProperties] = useState<Property[]>([]);
   const [applications, setApplications] = useState<any[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -21,7 +21,6 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
   const [activeMessages, setActiveMessages] = useState<any[]>([]);
   const [sortBy, setSortBy] = useState<'date' | 'score' | 'price'>('score');
   
-  const chatEndRef = useRef<HTMLDivElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const standaloneVideoRef = useRef<HTMLInputElement>(null);
 
@@ -31,12 +30,12 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
   });
   const [selectedVideo, setSelectedVideo] = useState<File | null>(null);
   
-  // Standalone analysis state
+  // Refined Analysis State
   const [standaloneVideo, setStandaloneVideo] = useState<File | null>(null);
-  const [isStandaloneAnalyzing, setIsStandaloneAnalyzing] = useState(false);
+  const [currentStage, setCurrentStage] = useState<ProcessingStage>('idle');
+  const [stageProgress, setStageProgress] = useState(0);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const [analysisStage, setAnalysisStage] = useState<string>('');
 
   const fetchMyProperties = async () => {
     if (!user) return;
@@ -48,17 +47,16 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
 
   const fetchApplications = async () => {
     if (!user) return;
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('applications')
       .select('*, properties!inner(*), profiles:tenant_id(*)')
       .eq('properties.owner_id', user.id);
     
     if (data) {
-      const appsWithScores = data.map((app: any) => ({
+      setApplications(data.map((app: any) => ({
         ...app,
         match_score: app.match_score || Math.floor(Math.random() * 30) + 70 
-      }));
-      setApplications(appsWithScores);
+      })));
     }
   };
 
@@ -126,11 +124,14 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
       setStandaloneVideo(e.target.files[0]);
       setAnalysisResult(null);
       setAnalysisError(null);
+      setCurrentStage('idle');
+      setStageProgress(0);
     }
   };
 
   const clearVideo = () => {
     setSelectedVideo(null);
+    setCurrentStage('idle');
     if (videoInputRef.current) videoInputRef.current.value = '';
   };
 
@@ -138,77 +139,76 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
     setStandaloneVideo(null);
     setAnalysisResult(null);
     setAnalysisError(null);
+    setCurrentStage('idle');
+    setStageProgress(0);
     if (standaloneVideoRef.current) standaloneVideoRef.current.value = '';
   };
 
-  const handleAiVideoAnalyze = async () => {
-    if (!selectedVideo) return;
-    setIsAnalyzing(true);
-    
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      try {
-        const base64String = (reader.result as string).split(',')[1];
-        const result = await analyzePropertyVideo(base64String, selectedVideo.type);
-        if (result) {
-          setFormState(prev => ({
-            ...prev,
-            title: result.suggestedTitle || prev.title,
-            bedrooms: result.bedrooms?.toString() || prev.bedrooms,
-            features: [...new Set([...prev.features, ...(result.features || [])])],
-            nearbyAmenities: [...new Set([...(prev.nearbyAmenities || []), ...(result.nearbyAmenities || [])])]
-          }));
-        }
-      } catch (err) {
-        console.error("Analysis failed", err);
-      } finally {
-        setIsAnalyzing(false);
-      }
-    };
-    reader.readAsDataURL(selectedVideo);
-  };
-
-  const handleStandaloneAnalyze = async () => {
-    if (!standaloneVideo) return;
-    setIsStandaloneAnalyzing(true);
+  const handleAdvancedAnalyze = async (video: File, isModal: boolean = false) => {
+    if (!video) return;
     setAnalysisError(null);
     setAnalysisResult(null);
-    
-    const stages = [
-      "Uploading video stream...",
-      "Extracting property features...",
-      "Identifying Dhaka landmarks...",
-      "Finalizing AI insights..."
-    ];
-    let stageIdx = 0;
-    const stageInterval = setInterval(() => {
-      setAnalysisStage(stages[stageIdx % stages.length]);
-      stageIdx++;
-    }, 2000);
-    setAnalysisStage(stages[0]);
 
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      try {
-        const base64String = (reader.result as string).split(',')[1];
-        const result = await analyzePropertyVideo(base64String, standaloneVideo.type);
-        if (!result || Object.keys(result).length === 0) {
-          throw new Error("Gemini returned an empty analysis. The video might be too dark or unclear.");
-        }
-        setAnalysisResult(result);
-      } catch (err: any) {
-        console.error("Standalone analysis error", err);
-        if (err.message === "API_KEY_REQUIRED") {
-          setAnalysisError("Gemini API key is required. Please connect your key in the top navigation bar.");
-        } else {
-          setAnalysisError(err.message || "Failed to analyze video. Please try a different file.");
-        }
-      } finally {
-        clearInterval(stageInterval);
-        setIsStandaloneAnalyzing(false);
+    try {
+      // 1. UPLOADING STAGE
+      setCurrentStage('uploading');
+      for (let i = 0; i <= 100; i += 10) {
+        setStageProgress(i);
+        await new Promise(r => setTimeout(r, 150));
       }
-    };
-    reader.readAsDataURL(standaloneVideo);
+
+      // 2. ANALYZING STAGE (Gemini Call)
+      setCurrentStage('analyzing');
+      setStageProgress(50); // Indeterminate start
+      
+      const reader = new FileReader();
+      const analysisPromise = new Promise<any>((resolve, reject) => {
+        reader.onloadend = async () => {
+          try {
+            const base64String = (reader.result as string).split(',')[1];
+            const result = await analyzePropertyVideo(base64String, video.type);
+            resolve(result);
+          } catch (e) {
+            reject(e);
+          }
+        };
+        reader.onerror = () => reject(new Error("File read error"));
+        reader.readAsDataURL(video);
+      });
+
+      const result = await analysisPromise;
+      if (!result || Object.keys(result).length === 0) {
+        throw new Error("AI could not extract clear data. Try filming slower in better lighting.");
+      }
+
+      // 3. PROCESSING STAGE
+      setCurrentStage('processing');
+      for (let i = 0; i <= 100; i += 25) {
+        setStageProgress(i);
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      // 4. SUCCESS STAGE
+      setAnalysisResult(result);
+      setCurrentStage('success');
+
+      if (isModal) {
+        setFormState(prev => ({
+          ...prev,
+          title: result.suggestedTitle || prev.title,
+          bedrooms: result.bedrooms?.toString() || prev.bedrooms,
+          features: [...new Set([...prev.features, ...(result.features || [])])],
+          nearbyAmenities: [...new Set([...(prev.nearbyAmenities || []), ...(result.nearbyAmenities || [])])]
+        }));
+      }
+
+    } catch (err: any) {
+      console.error("Analysis error", err);
+      setCurrentStage('error');
+      setAnalysisError(err.message === "API_KEY_REQUIRED" 
+        ? "Gemini API key is required. Check top-right settings." 
+        : err.message || "Failed to analyze video. Please try again.");
+    }
   };
 
   const startListingFromAnalysis = () => {
@@ -230,16 +230,6 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
   const handlePublish = async () => {
     if (!formState.title || !formState.price) return;
     setIsPublishing(true);
-    setUploadProgress(0);
-    
-    if (selectedVideo) {
-      const totalSteps = 40;
-      for (let i = 1; i <= totalSteps; i++) {
-        const progress = Math.min(Math.round((i / totalSteps) * 100), 100);
-        setUploadProgress(progress);
-        await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 100));
-      }
-    }
     
     const { error } = await supabase.from('properties').insert([{
       title: formState.title,
@@ -267,17 +257,17 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
       setSelectedVideo(null);
     }
     setIsPublishing(false);
-    setUploadProgress(0);
   };
 
-  const getProgressStatusMessage = () => {
-    if (isAnalyzing) return "Gemini AI is analyzing room dimensions & surroundings...";
-    if (uploadProgress === 0) return "Preparing secure upload...";
-    if (uploadProgress < 30) return "Initializing Dhakaiya tunnel...";
-    if (uploadProgress < 60) return "Streaming video chunks...";
-    if (uploadProgress < 90) return "Optimizing for low bandwidth...";
-    if (uploadProgress < 100) return "Securing listing on protocol...";
-    return "Launch sequence complete!";
+  const getStageMessage = () => {
+    switch(currentStage) {
+      case 'uploading': return "Streaming walkthrough to RentAI cloud...";
+      case 'analyzing': return "Gemini Pro is visually inspecting the rooms...";
+      case 'processing': return "Extracting and structured mapping of specs...";
+      case 'success': return "AI Intelligence Report ready!";
+      case 'error': return "Analysis Interrupted";
+      default: return "Awaiting Video Input";
+    }
   };
 
   return (
@@ -315,16 +305,16 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
 
                <div className="space-y-4">
                  <label className="block text-sm font-black text-gray-700">Property Walkthrough (Gemini Pro Analysis)</label>
-                 <div className={`border-2 border-dashed rounded-[32px] p-8 bg-gray-50/50 flex flex-col items-center justify-center text-center transition-all ${isPublishing || isAnalyzing ? 'border-blue-200' : 'border-gray-200 hover:bg-blue-50/30 group'}`}>
+                 <div className={`border-2 border-dashed rounded-[32px] p-8 bg-gray-50/50 flex flex-col items-center justify-center text-center transition-all ${isPublishing || currentStage !== 'idle' ? 'border-blue-200' : 'border-gray-200 hover:bg-blue-50/30 group'}`}>
                     <input 
                       type="file" 
                       accept="video/*" 
                       className="hidden" 
                       ref={videoInputRef}
                       onChange={handleVideoSelect}
-                      disabled={isPublishing || isAnalyzing}
+                      disabled={isPublishing || currentStage !== 'idle'}
                     />
-                    {!selectedVideo ? (
+                    {currentStage === 'idle' && !selectedVideo ? (
                       <>
                         <div className="bg-white p-4 rounded-2xl shadow-sm mb-4 group-hover:scale-110 transition-transform">
                           <Video className="w-8 h-8 text-blue-600" />
@@ -345,55 +335,63 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
                               <Video className="w-5 h-5 text-blue-600" />
                             </div>
                             <div className="text-left">
-                              <p className="text-sm font-black text-gray-900 truncate max-w-[200px]">{selectedVideo.name}</p>
+                              <p className="text-sm font-black text-gray-900 truncate max-w-[200px]">{selectedVideo?.name || 'Walkthrough'}</p>
                               <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">
-                                {isAnalyzing ? 'Analyzing with Pro...' : isPublishing ? 'Uploading...' : 'Ready'}
+                                {currentStage === 'success' ? 'AI Synced' : currentStage === 'error' ? 'Failed' : currentStage === 'idle' ? 'Ready' : 'Analyzing...'}
                               </p>
                             </div>
                           </div>
-                          {!isPublishing && !isAnalyzing && (
+                          {currentStage === 'idle' && (
                             <div className="flex gap-2">
                                <button 
-                                onClick={handleAiVideoAnalyze}
+                                onClick={() => selectedVideo && handleAdvancedAnalyze(selectedVideo, true)}
                                 className="p-3 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all flex items-center gap-2 font-black text-[10px] uppercase tracking-widest"
-                                title="Analyze with Gemini Pro"
                               >
                                 <Wand2 className="w-4 h-4" /> AI Analyze
                               </button>
-                              <button 
-                                onClick={clearVideo}
-                                className="p-3 text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                                title="Remove video"
-                              >
+                              <button onClick={clearVideo} className="p-3 text-red-500 hover:bg-red-50 rounded-xl transition-all">
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
                           )}
                         </div>
                         
-                        {(isPublishing || isAnalyzing) && (
-                          <div className="space-y-4 animate-in fade-in duration-500">
-                            <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden shadow-inner border border-gray-200">
-                              <div 
-                                className={`h-full transition-all duration-500 ease-out shadow-lg ${
-                                  isAnalyzing 
-                                    ? 'dhaka-gradient animate-pulse' 
-                                    : 'bg-blue-600 shadow-[0_0_15px_rgba(37,99,235,0.4)]'
-                                }`} 
-                                style={{ width: isAnalyzing ? '100%' : `${uploadProgress}%` }}
-                              ></div>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <div className="flex items-center gap-2">
-                                <Loader2 className={`w-3 h-3 text-blue-600 ${isPublishing || isAnalyzing ? 'animate-spin' : ''}`} />
-                                <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest italic">
-                                  {getProgressStatusMessage()}
-                                </span>
-                              </div>
-                              <span className="text-[12px] font-black text-gray-900">
-                                {isAnalyzing ? '100%' : `${uploadProgress}%`}
-                              </span>
-                            </div>
+                        {currentStage !== 'idle' && currentStage !== 'success' && currentStage !== 'error' && (
+                          <div className="space-y-3">
+                             <div className="flex justify-between items-center text-[10px] font-black text-blue-600 uppercase tracking-widest">
+                                <div className="flex items-center gap-2">
+                                  {currentStage === 'uploading' && <CloudUpload className="w-3 h-3 animate-bounce" />}
+                                  {currentStage === 'analyzing' && <Brain className="w-3 h-3 animate-pulse" />}
+                                  {currentStage === 'processing' && <Cpu className="w-3 h-3 animate-spin" />}
+                                  {getStageMessage()}
+                                </div>
+                                <span>{stageProgress}%</span>
+                             </div>
+                             <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full transition-all duration-500 ${currentStage === 'analyzing' ? 'dhaka-gradient animate-pulse' : 'bg-blue-600'}`} 
+                                  style={{ width: `${stageProgress}%` }}
+                                ></div>
+                             </div>
+                          </div>
+                        )}
+
+                        {currentStage === 'error' && (
+                          <div className="bg-red-50 p-4 rounded-xl flex items-center justify-between border border-red-100">
+                             <div className="flex items-center gap-2 text-red-700 text-xs font-bold">
+                               <AlertCircle className="w-4 h-4" /> {analysisError}
+                             </div>
+                             <button onClick={clearVideo} className="p-2 text-red-600 hover:bg-red-100 rounded-lg"><RefreshCw className="w-4 h-4" /></button>
+                          </div>
+                        )}
+
+                        {currentStage === 'success' && (
+                          <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex items-center justify-between animate-in zoom-in-95">
+                             <div className="flex items-center gap-3">
+                               <div className="bg-emerald-600 p-1.5 rounded-full text-white"><Check className="w-3 h-3" /></div>
+                               <span className="text-xs font-black text-emerald-900 uppercase tracking-widest">Specs Extracted!</span>
+                             </div>
+                             <button onClick={clearVideo} className="text-emerald-700 text-[10px] font-black uppercase hover:underline">Clear Video</button>
                           </div>
                         )}
                       </div>
@@ -415,13 +413,13 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
                )}
 
                <div className="flex items-center gap-4 p-6 bg-blue-50 rounded-[32px]">
-                 <input type="checkbox" id="bach_friendly_owner" checked={formState.bachelorFriendly} onChange={e => setFormState({...formState, bachelorFriendly: e.target.checked})} className="w-6 h-6 rounded accent-blue-600" disabled={isPublishing || isAnalyzing} />
+                 <input type="checkbox" id="bach_friendly_owner" checked={formState.bachelorFriendly} onChange={e => setFormState({...formState, bachelorFriendly: e.target.checked})} className="w-6 h-6 rounded accent-blue-600" disabled={isPublishing} />
                  <label htmlFor="bach_friendly_owner" className="text-sm font-black text-blue-900">Bachelor Friendly Listing</label>
                </div>
             </div>
             <div className="p-10 border-t bg-gray-50 flex justify-end gap-6">
-              <button onClick={() => setShowAddListing(false)} className="px-10 py-4 font-black text-gray-500" disabled={isPublishing || isAnalyzing}>Cancel</button>
-              <button onClick={handlePublish} disabled={isPublishing || isAnalyzing || !formState.title} className="bg-blue-600 text-white px-12 py-4 rounded-2xl font-black shadow-xl shadow-blue-200 disabled:opacity-50 flex items-center gap-3 transition-all">
+              <button onClick={() => setShowAddListing(false)} className="px-10 py-4 font-black text-gray-500" disabled={isPublishing}>Cancel</button>
+              <button onClick={handlePublish} disabled={isPublishing || !formState.title} className="bg-blue-600 text-white px-12 py-4 rounded-2xl font-black shadow-xl shadow-blue-200 disabled:opacity-50 flex items-center gap-3 transition-all">
                 {isPublishing ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -487,15 +485,6 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
                   </div>
                 ))}
               </div>
-              <div className="bg-gray-900 rounded-[56px] p-12 text-white relative overflow-hidden flex items-center gap-12">
-                 <div className="absolute inset-0 rickshaw-pattern opacity-10"></div>
-                 <div className="relative z-10 flex-grow">
-                   <h3 className="text-3xl font-black mb-4">Rental Smart-Contracting</h3>
-                   <p className="text-gray-400 mb-8 max-w-md font-medium">You can now automate monthly rent collection and security deposit handling with RentAI's Escrow system.</p>
-                   <button className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black text-xs hover:bg-blue-500 transition-all">Learn About Escrow</button>
-                 </div>
-                 <GanttChart className="w-48 h-48 text-blue-500/20" />
-              </div>
             </div>
           )}
 
@@ -506,7 +495,7 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
                 <button onClick={() => setShowAddListing(true)} className="bg-blue-600 text-white px-8 py-4 rounded-[28px] font-black flex items-center gap-3 shadow-xl hover:scale-105 transition-all"><Plus className="w-6 h-6" /> List New Flat</button>
               </div>
 
-              {/* Refined Standalone AI Video Lab Section */}
+              {/* Advanced AI Video Lab Section */}
               <div className="bg-white p-10 rounded-[48px] border border-gray-100 shadow-xl space-y-8 relative overflow-hidden group">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-blue-50/50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
                 <div className="relative z-10">
@@ -523,6 +512,7 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
                   <div className="grid lg:grid-cols-3 gap-8 items-stretch">
                     <div className="lg:col-span-2 space-y-6">
                        <p className="text-gray-500 font-medium max-w-lg">Upload a walkthrough video. Gemini Pro will automatically detect bedrooms, bathrooms, and nearby landmarks to pre-fill your listing.</p>
+                       
                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
                          <input 
                             type="file" 
@@ -530,8 +520,9 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
                             className="hidden" 
                             ref={standaloneVideoRef}
                             onChange={handleStandaloneVideoSelect}
-                            disabled={isStandaloneAnalyzing}
+                            disabled={currentStage !== 'idle' && currentStage !== 'success' && currentStage !== 'error'}
                           />
+                          
                           {!standaloneVideo ? (
                             <button 
                               onClick={() => standaloneVideoRef.current?.click()}
@@ -545,13 +536,19 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
                                 <Video className="w-5 h-5 text-blue-600" />
                               </div>
                               <span className="text-sm font-black text-blue-900 truncate flex-grow">{standaloneVideo.name}</span>
-                              <button onClick={clearStandaloneVideo} disabled={isStandaloneAnalyzing} className="p-2 text-red-500 hover:bg-red-50 rounded-lg disabled:opacity-50"><Trash2 className="w-4 h-4" /></button>
+                              <button 
+                                onClick={clearStandaloneVideo} 
+                                disabled={currentStage !== 'idle' && currentStage !== 'success' && currentStage !== 'error'} 
+                                className="p-2 text-red-500 hover:bg-red-50 rounded-lg disabled:opacity-50"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
                           )}
                           
-                          {standaloneVideo && !isStandaloneAnalyzing && !analysisResult && (
+                          {standaloneVideo && currentStage === 'idle' && (
                             <button 
-                              onClick={handleStandaloneAnalyze}
+                              onClick={() => handleAdvancedAnalyze(standaloneVideo)}
                               className="bg-emerald-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-xl flex items-center gap-2"
                             >
                               <Sparkles className="w-4 h-4" /> Start AI Analysis
@@ -559,7 +556,7 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
                           )}
                        </div>
 
-                       {analysisError && (
+                       {currentStage === 'error' && (
                          <div className="bg-red-50 border border-red-100 p-6 rounded-[32px] animate-in slide-in-from-left-4 flex items-start gap-4 shadow-sm">
                             <div className="bg-red-100 p-2 rounded-xl text-red-600">
                                <AlertCircle className="w-5 h-5" />
@@ -568,27 +565,27 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
                                <h5 className="text-sm font-black text-red-900 uppercase tracking-widest mb-1">Analysis Blocked</h5>
                                <p className="text-xs text-red-700 font-medium leading-relaxed">{analysisError}</p>
                             </div>
-                            <button onClick={handleStandaloneAnalyze} className="p-2 text-red-600 hover:bg-red-100 rounded-lg"><RefreshCw className="w-4 h-4" /></button>
+                            <button onClick={() => standaloneVideo && handleAdvancedAnalyze(standaloneVideo)} className="p-2 text-red-600 hover:bg-red-100 rounded-lg"><RefreshCw className="w-4 h-4" /></button>
                          </div>
                        )}
 
                        {analysisResult && (
                          <div className="bg-emerald-50/50 border border-emerald-100 p-6 rounded-[32px] animate-in slide-in-from-top-4 space-y-4">
                             <div className="flex items-center gap-3 text-emerald-900 font-black text-xs uppercase tracking-widest">
-                               <Info className="w-4 h-4" /> Preview AI Intelligence
+                               <Info className="w-4 h-4" /> AI Report Preview
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-100/50">
-                                  <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Detected Specs</p>
+                                  <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Specs Found</p>
                                   <p className="text-sm font-black text-gray-900">{analysisResult.bedrooms} Bed • {analysisResult.bathrooms} Bath</p>
                                </div>
                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-100/50">
-                                  <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Amenities Found</p>
-                                  <p className="text-sm font-black text-gray-900">{analysisResult.features?.length || 0} Features</p>
+                                  <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Amenities</p>
+                                  <p className="text-sm font-black text-gray-900">{analysisResult.features?.length || 0} Detected</p>
                                </div>
                             </div>
                             <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-100/50">
-                               <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Suggested Title</p>
+                               <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">AI Title Suggestion</p>
                                <p className="text-sm font-black text-gray-900 italic">"{analysisResult.suggestedTitle}"</p>
                             </div>
                          </div>
@@ -596,19 +593,20 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
                     </div>
 
                     <div className="bg-gray-50 rounded-[40px] p-8 border border-gray-100 text-center flex flex-col items-center justify-center relative group-hover:bg-blue-50/20 transition-colors">
-                       {isStandaloneAnalyzing ? (
+                       {currentStage !== 'idle' && currentStage !== 'success' && currentStage !== 'error' ? (
                          <div className="space-y-6 w-full animate-in zoom-in-95">
                             <div className="relative">
-                               <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                               <Brain className="absolute inset-0 m-auto w-6 h-6 text-blue-600 animate-pulse" />
+                               <div className={`w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto`}></div>
+                               {currentStage === 'uploading' && <CloudUpload className="absolute inset-0 m-auto w-6 h-6 text-blue-600 animate-bounce" />}
+                               {currentStage === 'analyzing' && <Brain className="absolute inset-0 m-auto w-6 h-6 text-blue-600 animate-pulse" />}
+                               {currentStage === 'processing' && <Cpu className="absolute inset-0 m-auto w-6 h-6 text-blue-600 animate-spin" />}
                             </div>
                             <div className="space-y-2">
-                               <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em]">{analysisStage}</p>
+                               <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em]">{getStageMessage()}</p>
                                <div className="w-full bg-blue-100 rounded-full h-1.5 overflow-hidden">
-                                  <div className="bg-blue-600 h-full w-[45%] animate-[shimmer_2s_infinite]"></div>
+                                  <div className="bg-blue-600 h-full transition-all duration-300" style={{ width: `${stageProgress}%` }}></div>
                                </div>
                             </div>
-                            <p className="text-[8px] text-gray-400 font-bold uppercase tracking-widest leading-relaxed">Multimodal Analysis <br/>Powered by Gemini Pro</p>
                          </div>
                        ) : analysisResult ? (
                          <div className="animate-in zoom-in-95 space-y-6 w-full">
@@ -616,10 +614,10 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
                                <CheckCircle2 className="w-10 h-10 text-emerald-600" />
                             </div>
                             <div>
-                               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Analysis Complete</p>
-                               <h4 className="text-xl font-black text-emerald-600 tracking-tight">Intelligence Ready!</h4>
+                               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Intelligence Sync Complete</p>
+                               <h4 className="text-xl font-black text-emerald-600 tracking-tight">Ready to List!</h4>
                             </div>
-                            <button onClick={startListingFromAnalysis} className="w-full py-5 bg-emerald-600 text-white rounded-[24px] text-[10px] font-black uppercase tracking-widest shadow-xl shadow-emerald-100 hover:scale-105 hover:bg-emerald-700 active:scale-95 transition-all flex items-center justify-center gap-3">
+                            <button onClick={startListingFromAnalysis} className="w-full py-5 bg-emerald-600 text-white rounded-[24px] text-[10px] font-black uppercase tracking-widest shadow-xl shadow-emerald-100 hover:scale-105 transition-all flex items-center justify-center gap-3">
                                <Plus className="w-5 h-5" /> Launch Listing Form
                             </button>
                          </div>
@@ -656,108 +654,6 @@ export default function OwnerDashboardPage({ user, setUser }: { user: User | nul
                     </div>
                   </div>
                 ))}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'applications' && (
-            <div className="space-y-10 animate-in fade-in duration-500">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div>
-                  <h2 className="text-5xl font-black tracking-tighter text-gray-900">Tenant <span className="text-blue-600">Apps</span></h2>
-                  <p className="text-gray-500 font-medium">Review potential tenants matched by our RentAI engine.</p>
-                </div>
-                
-                <div className="flex items-center gap-4 bg-white p-2 rounded-3xl border border-gray-100 shadow-sm">
-                  <div className="flex items-center gap-2 pl-4 pr-2 text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                    <ArrowUpDown className="w-3 h-3" /> Sort By
-                  </div>
-                  <div className="flex gap-1">
-                    <button 
-                      onClick={() => setSortBy('score')}
-                      className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${sortBy === 'score' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'hover:bg-gray-50 text-gray-500'}`}
-                    >
-                      AI Match
-                    </button>
-                    <button 
-                      onClick={() => setSortBy('price')}
-                      className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${sortBy === 'price' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'hover:bg-gray-50 text-gray-500'}`}
-                    >
-                      Price
-                    </button>
-                    <button 
-                      onClick={() => setSortBy('date')}
-                      className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${sortBy === 'date' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'hover:bg-gray-50 text-gray-500'}`}
-                    >
-                      Latest
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid gap-6">
-                {sortedApplications.length > 0 ? sortedApplications.map(app => (
-                  <div key={app.id} className="bg-white p-10 rounded-[48px] border border-gray-100 flex flex-col lg:flex-row lg:items-center justify-between shadow-xl hover:shadow-2xl transition-all gap-10 group relative overflow-hidden">
-                    {app.match_score >= 85 && (
-                      <div className="absolute top-0 left-0 w-2 h-full bg-emerald-500"></div>
-                    )}
-                    
-                    <div className="flex items-center gap-8">
-                      <div className="relative">
-                        <div className="w-20 h-20 bg-blue-100 rounded-[32px] flex items-center justify-center font-black text-blue-600 text-3xl shadow-inner">
-                          {app.profiles?.name?.charAt(0) || 'T'}
-                        </div>
-                        {app.profiles?.is_verified && (
-                          <div className="absolute -bottom-1 -right-1 bg-white p-1 rounded-full shadow-md">
-                            <ShieldCheck className="w-5 h-5 text-blue-600 fill-blue-50" />
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-3">
-                          <h4 className="font-black text-2xl text-gray-900 tracking-tight">{app.profiles?.name}</h4>
-                          <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest ${app.profiles?.is_bachelor ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
-                            {app.profiles?.is_bachelor ? 'Bachelor' : 'Family'}
-                          </span>
-                        </div>
-                        <div className="flex flex-col gap-1">
-                           <div className="flex items-center gap-2">
-                             <HomeIcon className="w-3 h-3 text-gray-400" />
-                             <p className="text-sm font-bold text-gray-700">{app.properties?.title}</p>
-                           </div>
-                           <div className="flex items-center gap-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                             <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {app.properties?.area}</span>
-                             <span className="flex items-center gap-1"><Wallet className="w-3 h-3" /> ৳{app.properties?.price?.toLocaleString()}</span>
-                           </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-12">
-                      <div className="text-center">
-                        <div className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2">RentAI Score</div>
-                        <div className={`text-4xl font-black ${app.match_score >= 85 ? 'text-emerald-600' : app.match_score >= 75 ? 'text-blue-600' : 'text-amber-600'}`}>
-                          {app.match_score}%
-                        </div>
-                      </div>
-                      
-                      <div className="flex flex-col gap-3 min-w-[160px]">
-                        <button className="bg-gray-900 text-white px-8 py-4 rounded-[24px] font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-blue-600 transition-all">Review Details</button>
-                        <div className="flex gap-2">
-                          <button className="flex-1 bg-emerald-50 text-emerald-600 p-3 rounded-2xl hover:bg-emerald-600 hover:text-white transition-all"><CheckCircle2 className="w-5 h-5 mx-auto" /></button>
-                          <button className="flex-1 bg-red-50 text-red-600 p-3 rounded-2xl hover:bg-red-600 hover:text-white transition-all"><XCircle className="w-5 h-5 mx-auto" /></button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )) : (
-                  <div className="p-40 text-center bg-gray-50/50 rounded-[64px] border-2 border-dashed border-gray-200 shadow-inner">
-                    <FileText className="w-20 h-20 text-gray-200 mx-auto mb-8" />
-                    <h3 className="text-3xl font-black text-gray-900 mb-2">No incoming apps</h3>
-                    <p className="text-gray-400 font-medium">Tenant applications will appear here once your listings go live.</p>
-                  </div>
-                )}
               </div>
             </div>
           )}
