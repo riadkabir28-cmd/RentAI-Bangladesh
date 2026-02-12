@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -6,15 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RentAI Bangladesh | Dhaka's Most Trusted Rental Platform</title>
     
-    <!-- Robust environment shims for Gemini SDK -->
+    <!-- Robust environment shims -->
     <script>
-      window.process = window.process || { env: {} };
-      window.process.env = { 
-        ...window.process.env, 
-        NODE_ENV: 'production', 
-        API_KEY: undefined 
+      window.process = { 
+        env: { NODE_ENV: 'production', API_KEY: undefined },
+        nextTick: (cb) => setTimeout(cb, 0),
+        browser: true
       };
-      window.process.nextTick = (cb) => setTimeout(cb, 0);
       window.global = window;
     </script>
 
@@ -35,79 +32,60 @@
         justify-content: center;
         background: #fcfcf9;
         z-index: 9999;
-        transition: opacity 0.5s ease-out;
       }
       @keyframes spin { to { transform: rotate(360deg); } }
+      .spinner { width: 40px; height: 40px; border: 3px solid #10b981; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
     </style>
 
-    <!-- Import Map for shared React instance -->
     <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@19.0.0",
-    "react-dom": "https://esm.sh/react-dom@19.0.0",
-    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
-    "react-router-dom": "https://esm.sh/react-router-dom@6.22.3?deps=react@19.0.0",
-    "lucide-react": "https://esm.sh/lucide-react@0.460.0?deps=react@19.0.0",
-    "@google/genai": "https://esm.sh/@google/genai@1.40.0",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.45.1",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/"
-  }
-}
-</script>
-
-    <!-- Babel Standalone processes JSX/TSX in the browser -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    {
+      "imports": {
+        "react": "https://esm.sh/react@19.0.0",
+        "react/": "https://esm.sh/react@19.0.0/",
+        "react-dom": "https://esm.sh/react-dom@19.0.0",
+        "react-dom/": "https://esm.sh/react-dom@19.0.0/",
+        "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+        "react-router-dom": "https://esm.sh/react-router-dom@6.22.3?deps=react@19.0.0",
+        "lucide-react": "https://esm.sh/lucide-react@0.460.0?deps=react@19.0.0",
+        "@google/genai": "https://esm.sh/@google/genai@1.40.0",
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.45.1"
+      }
+    }
+    </script>
   </head>
   <body>
     <div id="boot-loader">
-      <div style="width: 40px; height: 40px; border: 3px solid #10b981; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
-      <p style="margin-top: 20px; font-weight: 800; color: #10b981; font-family: 'Space Grotesk', sans-serif; letter-spacing: 0.1em; text-transform: uppercase; font-size: 10px;">Booting RentAI Dhaka...</p>
+      <div class="spinner"></div>
+      <p style="margin-top: 20px; font-weight: 800; color: #10b981; font-family: 'Space Grotesk', sans-serif; letter-spacing: 0.1em; text-transform: uppercase; font-size: 10px;">Booting Dhaka Match Engine...</p>
     </div>
 
     <div id="root"></div>
     
-    <!-- Entry script processed by Babel -->
-    <script type="text/babel" data-type="module" data-presets="typescript,react">
-      import React from 'react';
-      import ReactDOM from 'react-dom/client';
-      import App from './App.tsx';
-
-      const rootElement = document.getElementById('root');
-      if (rootElement) {
-        try {
-          const root = ReactDOM.createRoot(rootElement);
-          root.render(<App />);
-          
-          // Smoothly remove loader after app mounts
-          setTimeout(() => {
-            const loader = document.getElementById('boot-loader');
-            if (loader) {
-              loader.style.opacity = '0';
-              setTimeout(() => loader.remove(), 500);
-            }
-          }, 800);
-        } catch (err) {
-          console.error("Mounting Error:", err);
-          document.getElementById('boot-loader').innerHTML = `<p style="color:red">Mounting Error: ${err.message}</p>`;
-        }
-      }
-    </script>
+    <!-- The 'run' loader handles transpilation of index.tsx and its local imports -->
+    <script type="module" src="https://esm.sh/run/index.tsx"></script>
 
     <script>
-      // Global error management to catch and display syntax or module errors
-      window.addEventListener('error', function(event) {
-        const root = document.getElementById('root');
-        if (root && !root.hasChildNodes()) {
-          root.innerHTML = `
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; padding: 20px; font-family: sans-serif;">
-              <h1 style="color: #10b981; margin-bottom: 10px;">Startup Connection Error</h1>
-              <p style="color: #6b7280; max-width: 450px; line-height: 1.6;">${event.message}</p>
-              <div style="margin-top: 30px; padding: 15px; background: #f3f4f6; border-radius: 12px; font-size: 11px; font-family: monospace; color: #4b5563;">
-                Tip: If you see "Syntax Error", ensure your Vercel project has no custom build settings.
-              </div>
-              <button onclick="location.reload()" style="margin-top: 24px; padding: 12px 24px; background: #10b981; color: white; border: none; border-radius: 12px; font-weight: bold; cursor: pointer;">Retry Application</button>
+      // Clean up loader after app mounts
+      const observer = new MutationObserver((mutations) => {
+        if (document.getElementById('root').children.length > 0) {
+          const loader = document.getElementById('boot-loader');
+          if (loader) {
+            loader.style.opacity = '0';
+            setTimeout(() => loader.remove(), 500);
+          }
+          observer.disconnect();
+        }
+      });
+      observer.observe(document.getElementById('root'), { childList: true });
+
+      // Handle boot errors
+      window.addEventListener('error', (e) => {
+        if (!document.getElementById('root').children.length) {
+          document.getElementById('boot-loader').innerHTML = `
+            <div style="text-align:center; padding: 20px;">
+              <h2 style="color:#ef4444">Connection Error</h2>
+              <p style="font-size:12px; color:#6b7280">${e.message}</p>
+              <button onclick="location.reload()" style="margin-top:20px; padding:10px 20px; background:#10b981; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">Retry</button>
             </div>
           `;
         }
