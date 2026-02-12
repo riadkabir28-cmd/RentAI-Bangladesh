@@ -6,13 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RentAI Bangladesh | Dhaka's Most Trusted Rental Platform</title>
     
-    <!-- Environment shims to prevent library crashes -->
+    <!-- Robust environment shims -->
     <script>
       window.process = { 
-        env: { 
-          NODE_ENV: 'production',
-          API_KEY: undefined 
-        },
+        env: { NODE_ENV: 'production', API_KEY: undefined },
         nextTick: (cb) => setTimeout(cb, 0),
         browser: true
       };
@@ -23,67 +20,45 @@
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
     
     <style>
-      body { font-family: 'Inter', sans-serif; }
+      body { font-family: 'Inter', sans-serif; background-color: #fcfcf9; }
       h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; }
       .glass { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); }
-      
-      .rickshaw-pattern {
-        background-color: #ffffff;
-        background-image:  radial-gradient(#10b981 0.5px, transparent 0.5px), radial-gradient(#10b981 0.5px, #ffffff 0.5px);
-        background-size: 20px 20px;
-        background-position: 0 0,10px 10px;
-        opacity: 0.05;
-      }
-      .dhaka-gradient {
-        background: linear-gradient(135deg, #059669 0%, #10b981 50%, #fbbf24 100%);
-      }
-      .metro-badge {
-        background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
-        color: white;
-      }
-
-      @keyframes shimmer {
-        0% { transform: translateX(-100%); }
-        100% { transform: translateX(100%); }
-      }
-      .animate-shimmer {
-        animation: shimmer 2s infinite;
-      }
+      .dhaka-gradient { background: linear-gradient(135deg, #059669 0%, #10b981 50%, #fbbf24 100%); }
     </style>
 
     <script type="importmap">
 {
   "imports": {
     "react": "https://esm.sh/react@19.0.0",
-    "react/": "https://esm.sh/react@19.0.0/",
     "react-dom": "https://esm.sh/react-dom@19.0.0",
     "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
-    "react-router-dom": "https://esm.sh/react-router-dom@6.22.3?deps=react@19.0.0,react-dom@19.0.0",
+    "react-router-dom": "https://esm.sh/react-router-dom@6.22.3?deps=react@19.0.0",
     "lucide-react": "https://esm.sh/lucide-react@0.460.0?deps=react@19.0.0",
     "@google/genai": "https://esm.sh/@google/genai@1.40.0",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.45.1",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/"
   }
 }
 </script>
   </head>
-  <body class="bg-[#fcfcf9] text-gray-900">
+  <body>
     <div id="root"></div>
     
-    <!-- Module entry point -->
-    <script type="module" src="index.tsx"></script>
+    <!-- Using esm.sh/run to transpile TSX on-the-fly in the browser -->
+    <script type="module" src="https://esm.sh/run/index.tsx"></script>
 
     <script>
-      // Global error management for Vercel production logs
       window.addEventListener('error', function(event) {
-        console.error('RentAI Deployment Error:', event.error || event.message);
+        console.error('RentAI Runtime Error:', event.error || event.message);
         const root = document.getElementById('root');
         if (root && !root.hasChildNodes()) {
           root.innerHTML = `
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; padding: 20px; text-align: center;">
-              <h1 style="color: #10b981; margin-bottom: 10px;">RentAI Dhaka</h1>
-              <p style="color: #6b7280; max-width: 400px; margin-bottom: 24px;">The application encountered a startup error. This usually happens when the browser cannot parse modern TSX files directly.</p>
-              <button onclick="location.reload()" style="background: #10b981; color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: bold; cursor: pointer;">Retry Connection</button>
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; padding: 20px;">
+              <h1 style="color: #10b981;">RentAI Startup</h1>
+              <p style="color: #6b7280;">Booting the Dhaka Match Engine...</p>
+              <p style="font-size: 10px; color: #9ca3af; margin-top: 10px;">If this screen persists, check your browser console for MIME or React errors.</p>
+              <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 20px; background: #10b981; color: white; border: none; border-radius: 8px; cursor: pointer;">Refresh Application</button>
             </div>
           `;
         }
