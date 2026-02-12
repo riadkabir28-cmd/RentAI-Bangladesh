@@ -1,3 +1,4 @@
+
 {
   "version": 2,
   "headers": [
@@ -13,7 +14,7 @@
   ],
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!.*\\.(js|css|tsx|ts|png|jpg|jpeg|svg|gif|json|ico|woff|woff2|txt)).*)",
       "destination": "/index.html"
     }
   ]

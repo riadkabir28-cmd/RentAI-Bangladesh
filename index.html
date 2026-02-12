@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -32,6 +33,7 @@
         justify-content: center;
         background: #fcfcf9;
         z-index: 9999;
+        transition: opacity 0.5s ease;
       }
       @keyframes spin { to { transform: rotate(360deg); } }
       .spinner { width: 40px; height: 40px; border: 3px solid #10b981; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
@@ -65,27 +67,40 @@
     <script type="module" src="https://esm.sh/run/index.tsx"></script>
 
     <script>
-      // Clean up loader after app mounts
+      // Clean up loader after app mounts or show error if it fails
+      const root = document.getElementById('root');
+      const loader = document.getElementById('boot-loader');
+      
       const observer = new MutationObserver((mutations) => {
-        if (document.getElementById('root').children.length > 0) {
-          const loader = document.getElementById('boot-loader');
-          if (loader) {
-            loader.style.opacity = '0';
-            setTimeout(() => loader.remove(), 500);
-          }
+        if (root.children.length > 0) {
+          loader.style.opacity = '0';
+          setTimeout(() => loader.remove(), 500);
           observer.disconnect();
         }
       });
-      observer.observe(document.getElementById('root'), { childList: true });
+      observer.observe(root, { childList: true });
 
-      // Handle boot errors
+      // Timeout safety: if not loaded in 10s, show error
+      setTimeout(() => {
+        if (root.children.length === 0) {
+          loader.innerHTML = `
+            <div style="text-align:center; padding: 20px; max-width: 400px;">
+              <h2 style="color:#ef4444; font-family: sans-serif; margin-bottom: 12px;">Boot Timeout</h2>
+              <p style="font-size:13px; color:#6b7280; line-height:1.6;">The application is taking too long to load. This usually happens if the .tsx files are not being served correctly as JavaScript.</p>
+              <button onclick="location.reload()" style="margin-top:24px; padding:12px 24px; background:#10b981; color:white; border:none; border-radius:12px; font-weight:bold; cursor:pointer;">Retry Connection</button>
+            </div>
+          `;
+        }
+      }, 10000);
+
       window.addEventListener('error', (e) => {
-        if (!document.getElementById('root').children.length) {
-          document.getElementById('boot-loader').innerHTML = `
+        console.error("Runtime Error:", e.message);
+        if (!root.children.length) {
+          loader.innerHTML = `
             <div style="text-align:center; padding: 20px;">
-              <h2 style="color:#ef4444">Connection Error</h2>
-              <p style="font-size:12px; color:#6b7280">${e.message}</p>
-              <button onclick="location.reload()" style="margin-top:20px; padding:10px 20px; background:#10b981; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">Retry</button>
+              <h2 style="color:#ef4444">Application Error</h2>
+              <p style="font-size:12px; color:#6b7280; font-family: monospace;">${e.message}</p>
+              <button onclick="location.reload()" style="margin-top:20px; padding:10px 20px; background:#10b981; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">Reload App</button>
             </div>
           `;
         }

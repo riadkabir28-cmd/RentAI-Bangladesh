@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "echo 'Treating as static site. No build required.' && exit 0"
+    "build": "mkdir -p .vercel/output/static && cp -r * .vercel/output/static 2>/dev/null || true"
   }
 }
