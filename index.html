@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RentAI Bangladesh | Dhaka's Most Trusted Rental Platform</title>
     
-    <!-- Robust environment shims -->
+    <!-- Global shims to prevent library crashes -->
     <script>
       window.process = { 
         env: { NODE_ENV: 'production', API_KEY: undefined },
@@ -27,41 +27,48 @@
     </style>
 
     <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@19.0.0",
-    "react-dom": "https://esm.sh/react-dom@19.0.0",
-    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
-    "react-router-dom": "https://esm.sh/react-router-dom@6.22.3?deps=react@19.0.0",
-    "lucide-react": "https://esm.sh/lucide-react@0.460.0?deps=react@19.0.0",
-    "@google/genai": "https://esm.sh/@google/genai@1.40.0",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.45.1",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/"
-  }
-}
-</script>
+    {
+      "imports": {
+        "react": "https://esm.sh/react@19.0.0",
+        "react/": "https://esm.sh/react@19.0.0/",
+        "react-dom": "https://esm.sh/react-dom@19.0.0",
+        "react-dom/": "https://esm.sh/react-dom@19.0.0/",
+        "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+        "react-router-dom": "https://esm.sh/react-router-dom@6.22.3?deps=react@19.0.0",
+        "lucide-react": "https://esm.sh/lucide-react@0.460.0?deps=react@19.0.0",
+        "@google/genai": "https://esm.sh/@google/genai@1.40.0",
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.45.1"
+      }
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>
     
-    <!-- Using esm.sh/run to transpile TSX on-the-fly in the browser -->
+    <!-- Load the local index.tsx through the esm.sh/run transpiler with a local reference -->
     <script type="module" src="https://esm.sh/run/index.tsx"></script>
 
     <script>
+      // Global error listener to help debug production boot failures
       window.addEventListener('error', function(event) {
-        console.error('RentAI Runtime Error:', event.error || event.message);
+        console.error('RentAI Boot Error:', event.error || event.message);
         const root = document.getElementById('root');
-        if (root && !root.hasChildNodes()) {
-          root.innerHTML = `
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; padding: 20px;">
-              <h1 style="color: #10b981;">RentAI Startup</h1>
-              <p style="color: #6b7280;">Booting the Dhaka Match Engine...</p>
-              <p style="font-size: 10px; color: #9ca3af; margin-top: 10px;">If this screen persists, check your browser console for MIME or React errors.</p>
-              <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 20px; background: #10b981; color: white; border: none; border-radius: 8px; cursor: pointer;">Refresh Application</button>
-            </div>
-          `;
-        }
+        // If the app hasn't loaded after 2 seconds, show a troubleshooting guide
+        setTimeout(() => {
+          if (root && !root.hasChildNodes()) {
+            root.innerHTML = `
+              <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; padding: 20px;">
+                <h1 style="color: #10b981; font-family: sans-serif;">RentAI Dhaka</h1>
+                <p style="color: #6b7280; font-size: 14px;">The app is taking longer than expected to start.</p>
+                <div style="margin-top: 20px; font-family: monospace; font-size: 10px; color: #ef4444; background: #fef2f2; padding: 15px; border-radius: 12px; border: 1px solid #fee2e2; max-width: 400px; text-align: left;">
+                  <b>Error Context:</b><br/>
+                  ${event.message || 'Module resolution timeout. This usually indicates a network issue or an invalid ImportMap version mismatch.'}
+                </div>
+                <button onclick="location.reload()" style="margin-top: 24px; padding: 12px 24px; background: #10b981; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; transition: opacity 0.2s;">Retry Application Link</button>
+              </div>
+            `;
+          }
+        }, 2000);
       });
     </script>
   </body>
